@@ -12,11 +12,13 @@ Profile.json の値 (未完成状態で OK、S1-S5 完了時点):
 
 - `project.languages[]`
 - `project.root_kind[]`
+- `project.design_focus` (flag、アーキタイプ判定には使わないが参考値)
 - `workflow.plan_work_review`
 - `workflow.precommit_strictness`
 - `quality_gates.required_checks[]`
 - `quality_gates.ci_external`
 - `safety.handles_secrets`
+- `safety.destructive_ops[]`
 
 ---
 
@@ -27,10 +29,13 @@ Profile.json の値 (未完成状態で OK、S1-S5 完了時点):
   "archetype_primary": "daily-utility",
   "archetype_scores": {
     "daily-utility": 0.72,
-    "production-saas": 0.15,
-    "ml-data": 0.08,
-    "design-heavy": 0.05
-  }
+    "library-package": 0.05,
+    "production-saas": 0.12,
+    "mobile-app": 0.02,
+    "ml-data": 0.06,
+    "infra-iac": 0.03
+  },
+  "mixed_warning": false
 }
 ```
 
@@ -50,7 +55,16 @@ Profile.json の値 (未完成状態で OK、S1-S5 完了時点):
 | `ci_external` = false AND `required_checks` ⊆ {lint, format} | +0.20 |
 | `handles_secrets` = false | +0.10 |
 | `plan_work_review` = false | +0.10 |
-| その他の root_kind がない (cli のみ) | +0.20 |
+| root_kind が `[cli]` のみ | +0.20 |
+
+### library-package
+
+| 信号 | 寄与 |
+|---|---|
+| `root_kind` に `library` 含む | +0.50 |
+| `required_checks` に `typecheck` AND `unit-test` 両方 | +0.20 |
+| `required_checks` に `api-compat` または `semver-check` | +0.20 |
+| `ci_external` = false | +0.05 |
 
 ### production-saas
 
@@ -63,6 +77,15 @@ Profile.json の値 (未完成状態で OK、S1-S5 完了時点):
 | `plan_work_review` = true | +0.10 |
 | `ci_external` = false (scaffold 対象) | +0.05 |
 
+### mobile-app
+
+| 信号 | 寄与 |
+|---|---|
+| `root_kind` に `mobile` 含む | +0.50 |
+| 言語に `swift` または `kotlin` | +0.20 |
+| `required_checks` に `visual-regression` または `integration-test` | +0.15 |
+| `required_checks` に `a11y` | +0.10 |
+
 ### ml-data
 
 | 信号 | 寄与 |
@@ -73,15 +96,19 @@ Profile.json の値 (未完成状態で OK、S1-S5 完了時点):
 | `plan_work_review` = true | +0.10 |
 | `handles_secrets` = true (データソース認証) | +0.10 |
 
-### design-heavy
+### infra-iac
 
 | 信号 | 寄与 |
 |---|---|
-| `root_kind` に `design` 含む | +0.45 |
-| `required_checks` に `a11y` | +0.20 |
-| `required_checks` に `visual-regression` | +0.20 |
-| `specialized_reviewers` に `ui` または `a11y` | +0.10 |
-| 主要言語が TypeScript/JavaScript | +0.05 |
+| `root_kind` に `infra` 含む | +0.50 |
+| `required_checks` に `infra-plan-review` | +0.20 |
+| `destructive_ops` に `terraform-apply` / `helm-upgrade` / `k8s-apply` / `deploy` | +0.15 |
+| `plan_work_review` = true | +0.10 |
+| `handles_secrets` = true | +0.05 |
+
+### design-heavy (廃止)
+
+~~2026-04-25 の再編により削除。`project.design_focus` フラグに統合。アーキタイプ判定には影響しない。~~
 
 ---
 
@@ -102,9 +129,9 @@ Profile.json の値 (未完成状態で OK、S1-S5 完了時点):
 ```
 判定結果:
   daily-utility: 0.72  ← デフォルト採用
-  production-saas: 0.15
-  ml-data: 0.08
-  design-heavy: 0.05
+  production-saas: 0.12
+  ml-data: 0.06
+  ...
 
 このままでいいですか? (yes / 別のアーキタイプを選ぶ / 詳細を見る)
 ```
@@ -126,8 +153,10 @@ MVP では Mixed を**許容しない**。トップ1を強制採用。将来:
 | # | 入力ハイライト | 期待 primary | 許容スコア範囲 |
 |---|---|---|---|
 | 1 | root_kind=[cli], precommit=lint-only, no CI | daily-utility | >0.60 |
-| 2 | root_kind=[web], required_checks=[typecheck,unit-test], handles_secrets | production-saas | >0.55 |
-| 3 | root_kind=[notebook], languages=[python] | ml-data | >0.55 |
-| 4 | root_kind=[design], required_checks=[a11y,visual-regression] | design-heavy | >0.60 |
-| 5 | 全信号ゼロ (empty) | daily-utility | 1.0 (default) |
-| 6 | root_kind=[cli, web] 両方 | 最高スコアのほう | 差が 0.15 以内なら mixed 警告 |
+| 2 | root_kind=[library], required=[typecheck,unit-test,api-compat] | library-package | >0.55 |
+| 3 | root_kind=[web], required_checks=[typecheck,unit-test], handles_secrets | production-saas | >0.55 |
+| 4 | root_kind=[mobile], languages=[swift] | mobile-app | >0.60 |
+| 5 | root_kind=[notebook], languages=[python] | ml-data | >0.55 |
+| 6 | root_kind=[infra], destructive=[terraform-apply] | infra-iac | >0.55 |
+| 7 | 全信号ゼロ (empty) | daily-utility | 1.0 (default) |
+| 8 | root_kind=[cli, web] 両方 | 最高スコアのほう | 差が 0.15 以内なら mixed 警告 |

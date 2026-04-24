@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "target": "/home/sophy/projectx/skill_manual/tests/sandbox-mobile-ios",
+  "generated_at": "2026-04-24T16:06:05Z",
+  "validator_version": "0.1.0",
+  "summary": {
+    "errors": 0,
+    "warnings": 1,
+    "info": 0
+  },
+  "issues": [
+    {
+      "id": "C13",
+      "severity": "WARNING",
+      "message": "profile.safety.handles_secrets=true なのに block-secret-commit hook が 未登録 (settings.json で参照されていない)",
+      "file": "/home/sophy/projectx/skill_manual/tests/sandbox-mobile-ios",
+      "why": "秘密情報を扱う宣言がある harness に秘密漏洩ガードが無い = リスク",
+      "fix_hint": "'/harness-generator --force-overwrite .claude/hooks/block-secret-commit.sh' で再生成、または手動配置 + settings.json 登録"
+    }
+  ],
+  "profile": {
+    "archetype_primary": "mobile-app",
+    "schema_version": "1.0"
+  }
+}

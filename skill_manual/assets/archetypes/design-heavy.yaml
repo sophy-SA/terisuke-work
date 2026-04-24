@@ -1,22 +1,25 @@
-# design-heavy archetype: Tailwind + shadcn/ui 等のデザイン重視フロントエンド向け
+# DEPRECATED (as of 2026-04-25)
+# design-heavy archetype は削除され、project.design_focus フラグに統合されました。
 #
-# MVP スコープ: stub のみ。Phase 8 で実装。
-# 設計方針 (将来):
-#   - daily-utility extends
-#   - ui-reviewer / a11y-reviewer subagents
-#   - PostToolUse screenshot hook (gstack / Playwright available fallback)
-#   - E2E via accessibility tree (token 効率 90% 削減)
-#   - Expert Pool パターン (視点別 subagent 切替)
+# どのアーキタイプでも design_focus=true にすると、以下が自動適用されます:
+#   - review.specialized_reviewers に ui / a11y を自動追加
+#   - CLAUDE.md テンプレに design review workflow 節を追加
+#   - production-saas なら visual-regression hook を推奨
+#
+# 古い profile.json (archetype_primary: design-heavy) を migrate するには:
+#   archetype_primary を "production-saas" または "library-package" に変更し、
+#   project.design_focus: true を設定してください。
+#
+# この YAML ファイルは apply_scaffold.py に検出されたとき error を返すためだけに存在します。
+# 将来的に削除予定。
 
 name: design-heavy
-status: planned
+status: deprecated
 description: |
-  Tailwind / shadcn/ui / デザインシステム中心のフロントエンドプロジェクト向け。
-  UI レビュー、a11y チェック、スクリーンショット差分を scaffold する。
-  MVP では未実装。Phase 8 で実装予定。
+  ⚠ Deprecated. archetype ではなく project.design_focus フラグを使ってください。
+  apply_scaffold.py はこの archetype を検出すると error で中断します。
 
-extends: daily-utility
-
+extends: null
 templates: []
 conditional_templates: []
 variables: {}

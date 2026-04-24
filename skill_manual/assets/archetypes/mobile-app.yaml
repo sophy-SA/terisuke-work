@@ -1,0 +1,85 @@
+# mobile-app archetype: iOS / Android / React Native / Flutter のモバイルアプリ
+#
+# 設計方針:
+#   - daily-utility extends (最小 hooks を継承)
+#   - プラットフォーム固有 tooling (xcodebuild / gradle / flutter / metro) への permissions
+#   - 署名ファイル・provisioning profile・keystore 漏洩ブロック hook
+#   - Info.plist / AndroidManifest.xml / app.json / pubspec.yaml 編集時の注意喚起
+#   - mobile-reviewer subagent (プラットフォーム別の観点)
+#   - profile.project.mobile_platforms[] で有効プラットフォームを切り替え
+
+name: mobile-app
+status: complete
+description: |
+  iOS (Swift) / Android (Kotlin) / React Native / Flutter のモバイルアプリ向け。
+  xcodebuild / gradle / flutter / metro 用 permissions、署名情報漏洩ブロック、
+  manifest 編集警告、UI テストランナー向け scaffold を生成する。
+
+extends: daily-utility
+
+templates:
+  # mobile-app 版 CLAUDE.md (daily-utility の CLAUDE.md を上書き)
+  - src: mobile-app/CLAUDE.md.tmpl
+    dest: CLAUDE.md
+    merge: skip_if_exists
+
+  # モバイル専門 reviewer subagent
+  - src: mobile-app/subagents/mobile-reviewer.md.tmpl
+    dest: .claude/subagents/mobile-reviewer.md
+    merge: overwrite
+
+  # PreToolUse: 署名ファイルの commit 試みをブロック
+  - src: mobile-app/hooks/block-signing-secret.sh.tmpl
+    dest: .claude/hooks/block-signing-secret.sh
+    mode: "0755"
+    merge: overwrite
+
+  # PreToolUse: Info.plist / AndroidManifest.xml 等の編集に警告
+  - src: mobile-app/hooks/protect-manifest.sh.tmpl
+    dest: .claude/hooks/protect-manifest.sh
+    mode: "0755"
+    merge: overwrite
+
+  # mobile 用 settings.json (daily-utility の permissions に追加マージ)
+  - src: mobile-app/settings.patch.json.tmpl
+    dest: .claude/settings.json
+    merge: json-deep
+
+  # ハーネス説明 docs
+  - src: mobile-app/docs/harness.md.tmpl
+    dest: docs/harness.md
+    merge: skip_if_exists
+
+conditional_templates:
+  # iOS 専用 hook (xcodebuild の本番 release build を PreToolUse で gate)
+  - condition: "MOBILE_PLATFORM_IOS"
+    src: mobile-app/hooks/gate-xcodebuild-release.sh.tmpl
+    dest: .claude/hooks/gate-xcodebuild-release.sh
+    mode: "0755"
+    merge: overwrite
+
+  # Android 専用 hook (gradle release/signing)
+  - condition: "MOBILE_PLATFORM_ANDROID"
+    src: mobile-app/hooks/gate-gradle-release.sh.tmpl
+    dest: .claude/hooks/gate-gradle-release.sh
+    mode: "0755"
+    merge: overwrite
+
+  # handles_secrets / rm-rf は親 (daily-utility) から継承される
+
+subagents:
+  - reviewer       # daily-utility から継承
+  - mobile-reviewer
+
+hooks:
+  PreToolUse:
+    - matcher: "Edit|Write"
+      script: ".claude/hooks/block-signing-secret.sh"
+    - matcher: "Edit|Write"
+      script: ".claude/hooks/protect-manifest.sh"
+    - matcher: "Bash"
+      script: ".claude/hooks/gate-xcodebuild-release.sh"
+      condition: "MOBILE_PLATFORM_IOS"
+    - matcher: "Bash"
+      script: ".claude/hooks/gate-gradle-release.sh"
+      condition: "MOBILE_PLATFORM_ANDROID"

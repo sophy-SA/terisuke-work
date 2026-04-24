@@ -1,0 +1,25 @@
+# library-package archetype: npm / PyPI / crates / go module として公開する再利用コード
+#
+# MVP スコープ: stub のみ。Phase 8c で template を実装。
+# 設計方針 (将来):
+#   - daily-utility extends (最小 hooks を継承)
+#   - semver + CHANGELOG 自動検証 hook
+#   - 公開 API の後方互換性チェック (api-compat reviewer)
+#   - typecheck + unit-test 必須 (precommit_strictness=lint-test 以上を強制推奨)
+#   - release workflow (GitHub Actions) で publish gate
+#   - docs 生成 (typedoc / mkdocs 等) チェック
+
+name: library-package
+status: planned
+description: |
+  npm / PyPI / crates / go module として公開するライブラリやパッケージ向け。
+  semver / CHANGELOG / 公開 API 後方互換 / docs 生成 / release automation を scaffold する。
+  MVP では未実装。Phase 8c で実装予定。
+
+extends: daily-utility
+
+templates: []
+conditional_templates: []
+variables: {}
+subagents: []
+hooks: {}

@@ -21,9 +21,29 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
+
+
+def _resolve_assets_dir(explicit: str | None = None) -> Path:
+    """assets ディレクトリを解決する (Phase 9 packaging 対応).
+
+    優先順位: 明示 > HARNESS_FORGE_ASSETS 環境変数 > script location 相対
+    """
+    if explicit:
+        return Path(explicit).resolve()
+    env = os.environ.get("HARNESS_FORGE_ASSETS")
+    if env:
+        return Path(env).resolve()
+    here = Path(__file__).resolve()
+    candidate = here.parents[3] / "assets"
+    if candidate.exists():
+        return candidate
+    # Validator は assets が無くても動く (check_*.py は独立)。None を返さず raise はせず、
+    # report schema だけ使えなくてもよい
+    return here.parents[3] / "assets"  # 存在しなくてもパスとして返す (後続で check)
 
 sys.path.insert(0, str(Path(__file__).parent))
 try:
