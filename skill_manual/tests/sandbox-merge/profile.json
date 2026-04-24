@@ -1,0 +1,47 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-04-24T12:00:00Z",
+  "project": {
+    "name": "sandbox-cli-tool",
+    "summary": "E2E テスト用の fixture プロジェクト。日常的なファイル整理を自動化する CLI ツールを想定",
+    "languages": ["python"],
+    "root_kind": ["cli"]
+  },
+  "archetype_primary": "daily-utility",
+  "archetype_scores": {
+    "daily-utility": 0.72,
+    "production-saas": 0.15,
+    "ml-data": 0.08,
+    "design-heavy": 0.05
+  },
+  "workflow": {
+    "plan_work_review": false,
+    "precommit_strictness": "lint-only",
+    "long_running_agents": false
+  },
+  "quality_gates": {
+    "required_checks": ["lint", "format"],
+    "ci_external": false
+  },
+  "review": {
+    "ai_second_opinion": false,
+    "specialized_reviewers": []
+  },
+  "safety": {
+    "handles_secrets": false,
+    "destructive_ops": []
+  },
+  "meta": {
+    "locale": "ja",
+    "existing_claude_dir": false,
+    "intents": [
+      "一度に1機能だけ実装する",
+      "commit 前に必ず lint を通す",
+      "ファイル移動前に dry-run で対象を確認"
+    ]
+  },
+  "overrides": {
+    "exclude_subagents": [],
+    "force_include_hooks": []
+  }
+}

@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.eggs/
+*.egg-info/
+dist/
+build/
+
+# Node (for template development, not shipped)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test output / sandboxes
+tests/sandbox/
+tests/.pytest_cache/
+.coverage
+htmlcov/
+
+# Claude Code local state
+.claude/settings.local.json
+.claude/state/
+.harness-forge.state.json
+
+# Generated scaffolds in test targets (not the templates themselves)
+tests/sandbox/**/CLAUDE.md
+tests/sandbox/**/.claude/
+tests/sandbox/**/harness-report.*
+
+# Local env
+.env
+.env.local
+.envrc

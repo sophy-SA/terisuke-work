@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-04-24T12:00:00Z",
+  "project": {
+    "name": "sandbox-cli-with-secrets",
+    "summary": "秘密情報を扱う CLI の fixture。C13 + conditional hook を検証する",
+    "languages": ["python"],
+    "root_kind": ["cli"]
+  },
+  "archetype_primary": "daily-utility",
+  "archetype_scores": {
+    "daily-utility": 0.65,
+    "production-saas": 0.25,
+    "ml-data": 0.05,
+    "design-heavy": 0.05
+  },
+  "workflow": {
+    "plan_work_review": false,
+    "precommit_strictness": "lint-only",
+    "long_running_agents": false
+  },
+  "quality_gates": {
+    "required_checks": ["lint", "format"],
+    "ci_external": false
+  },
+  "review": {
+    "ai_second_opinion": false,
+    "specialized_reviewers": []
+  },
+  "safety": {
+    "handles_secrets": true,
+    "destructive_ops": ["rm-rf"]
+  },
+  "meta": {
+    "locale": "ja",
+    "existing_claude_dir": false,
+    "intents": [
+      "秘密情報を誤って commit しない",
+      "破壊的コマンドは必ず dry-run してから実行"
+    ]
+  },
+  "overrides": {
+    "exclude_subagents": [],
+    "force_include_hooks": []
+  }
+}
