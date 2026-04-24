@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# .git/hooks/pre-commit
+# =========================================================================
+# git pre-commit hook: .claude/hooks/pre-commit-lint.sh へ委譲する薄いラッパ
+# harness-forge が生成。既存の pre-commit がある場合はこのファイルは配置されない
+# (skip_if_exists モード)。
+# =========================================================================
+
+set -euo pipefail
+
+LINT_HOOK="$(git rev-parse --show-toplevel)/.claude/hooks/pre-commit-lint.sh"
+
+if [[ -x "$LINT_HOOK" ]]; then
+  exec "$LINT_HOOK"
+fi
+
+# lint hook が無い or 実行不可でも commit を止めない (opt-in 思想)
+exit 0

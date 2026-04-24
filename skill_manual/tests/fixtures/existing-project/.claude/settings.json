@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(my-custom-tool:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf /:*)"
+    ]
+  },
+  "theme": "dark",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'user-custom startup'"
+          }
+        ]
+      }
+    ]
+  }
+}

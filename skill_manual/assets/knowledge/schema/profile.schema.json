@@ -1,0 +1,220 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://harness-forge.dev/schemas/profile.schema.json",
+  "title": "Harness Profile",
+  "description": "harness-profiler が出力し harness-generator が消費する中間成果物のスキーマ",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "project",
+    "archetype_primary",
+    "workflow",
+    "quality_gates",
+    "meta"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "スキーマバージョン。互換性のないメジャー変更で bump"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "profiler 実行時刻 (ISO 8601)"
+    },
+    "project": {
+      "type": "object",
+      "required": ["name", "languages", "root_kind"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "プロジェクト名。CLAUDE.md の header に使用"
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "プロジェクト目的の1-2文サマリー"
+        },
+        "languages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": [
+              "python",
+              "typescript",
+              "javascript",
+              "go",
+              "rust",
+              "swift",
+              "kotlin",
+              "ruby",
+              "java",
+              "csharp",
+              "php",
+              "shell",
+              "other"
+            ]
+          },
+          "description": "主要言語。linter/formatter 自動検出に使用"
+        },
+        "root_kind": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": ["cli", "web", "notebook", "design", "mixed"]
+          },
+          "description": "プロジェクトの主構造。アーキタイプ判定に使用"
+        }
+      }
+    },
+    "archetype_primary": {
+      "type": "string",
+      "enum": ["daily-utility", "production-saas", "ml-data", "design-heavy"],
+      "description": "最優先アーキタイプ。Generator がこれで template set を決定"
+    },
+    "archetype_scores": {
+      "type": "object",
+      "description": "各アーキタイプのスコア (0.0〜1.0)。合計は 1.0 に正規化されるべき",
+      "properties": {
+        "daily-utility": { "type": "number", "minimum": 0, "maximum": 1 },
+        "production-saas": { "type": "number", "minimum": 0, "maximum": 1 },
+        "ml-data": { "type": "number", "minimum": 0, "maximum": 1 },
+        "design-heavy": { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "workflow": {
+      "type": "object",
+      "properties": {
+        "plan_work_review": {
+          "type": "boolean",
+          "default": false,
+          "description": "Plan → Work → Review の明示的ワークフローを採用するか"
+        },
+        "precommit_strictness": {
+          "type": "string",
+          "enum": ["none", "lint-only", "lint-test", "full"],
+          "default": "lint-only",
+          "description": "pre-commit hook の厳格度。full は lint + type + test + security"
+        },
+        "long_running_agents": {
+          "type": "boolean",
+          "default": false,
+          "description": "長時間実行 agent を使うか。CLAUDE.md に compaction ヒントを追加"
+        }
+      }
+    },
+    "quality_gates": {
+      "type": "object",
+      "properties": {
+        "required_checks": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "lint",
+              "format",
+              "typecheck",
+              "unit-test",
+              "integration-test",
+              "security-scan",
+              "a11y",
+              "visual-regression"
+            ]
+          },
+          "default": ["lint", "format"],
+          "description": "PR 前に必須の品質チェック。各項目に対応する hook または CI job が生成される"
+        },
+        "ci_external": {
+          "type": "boolean",
+          "default": false,
+          "description": "true なら CI YAML を生成せず既存 CI を尊重。false なら GitHub Actions YAML を scaffold"
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "properties": {
+        "ai_second_opinion": {
+          "type": "boolean",
+          "default": false,
+          "description": "code-reviewer subagent を追加するか"
+        },
+        "specialized_reviewers": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["code", "security", "a11y", "perf", "ui"]
+          },
+          "default": [],
+          "description": "専門化 reviewer subagent のリスト。quality_gates.required_checks から自動推奨される"
+        }
+      }
+    },
+    "safety": {
+      "type": "object",
+      "properties": {
+        "handles_secrets": {
+          "type": "boolean",
+          "default": false,
+          "description": "true なら block-secret-commit hook が必須になる (Validator C13)"
+        },
+        "destructive_ops": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["deploy", "db-migrate", "force-push", "rm-rf", "drop-table"]
+          },
+          "default": [],
+          "description": "ガードすべき破壊的操作。対応する PreToolUse hook を生成"
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "required": ["locale", "existing_claude_dir"],
+      "properties": {
+        "locale": {
+          "type": "string",
+          "enum": ["ja", "en"],
+          "default": "ja",
+          "description": "scaffold する人間可読文字列の言語。MVP は ja のみ有効"
+        },
+        "existing_claude_dir": {
+          "type": "boolean",
+          "default": false,
+          "description": "true なら Generator は merge mode で動作"
+        },
+        "intents": {
+          "type": "array",
+          "items": { "type": "string", "maxLength": 200 },
+          "minItems": 0,
+          "maxItems": 5,
+          "description": "トップ N 個の must-have 意図。CLAUDE.md に footer として埋め込まれる"
+        }
+      }
+    },
+    "overrides": {
+      "type": "object",
+      "properties": {
+        "exclude_subagents": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "Generator がデフォルト生成する subagent のうち除外するもの"
+        },
+        "force_include_hooks": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "archetype の標準 hook set に追加で含める hook カタログ ID"
+        }
+      }
+    }
+  }
+}

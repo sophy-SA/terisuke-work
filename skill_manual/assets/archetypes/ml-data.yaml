@@ -1,0 +1,25 @@
+# ml-data archetype: Jupyter + pytest + DVC/MLflow 等の ML パイプライン向け
+#
+# MVP スコープ: stub のみ。Phase 8 で実装。
+# 設計方針 (将来):
+#   - daily-utility extends
+#   - notebook-reviewer / data-validator subagents
+#   - .gitattributes で notebook diff filter
+#   - >50MB artifact ブロック hook
+#   - データ品質層 (GX / dbt Tests) をオプション
+#   - Fan-out/Fan-in パターン (複数モデル並列評価)
+
+name: ml-data
+status: planned
+description: |
+  Jupyter Notebook 中心、pytest + DVC/MLflow による ML パイプライン向け。
+  データ妥当性検証、大容量 artifact ブロック、notebook diff filter を scaffold する。
+  MVP では未実装。Phase 8 で実装予定。
+
+extends: daily-utility
+
+templates: []
+conditional_templates: []
+variables: {}
+subagents: []
+hooks: {}

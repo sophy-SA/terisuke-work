@@ -1,0 +1,33 @@
+# harness-profiler --batch モード用の fixture answers.yaml
+# tests/e2e.sh から使われる
+
+S1:
+  project_summary: "E2E テスト用の fixture プロジェクト。日常的なファイル整理を自動化する CLI ツールを想定"
+  languages: ["python"]
+  root_kind: ["cli"]
+
+S2:
+  plan_work_review: false
+  precommit_strictness: "lint-only"
+  long_running_agents: false
+
+S3:
+  required_checks: ["lint", "format"]
+  ci_external: false
+
+S4:
+  ai_second_opinion: false
+  specialized_reviewers: []
+
+S5:
+  handles_secrets: false
+  destructive_ops: []
+
+S6:
+  project_name: "sandbox-cli-tool"
+  locale: "ja"
+  existing_claude_dir: false
+  intents:
+    - "一度に1機能だけ実装する"
+    - "commit 前に必ず lint を通す"
+    - "ファイル移動前に dry-run で対象を確認"

@@ -1,0 +1,118 @@
+# daily-utility archetype: 個人用 CLI / 日常ツール / shell script 向け
+#
+# 設計方針:
+#   - 最小 harness (週1 レベル): CLAUDE.md + PostToolUse format + pre-commit lint
+#   - 単一 reviewer subagent (task-type, read-only)
+#   - CI は前提としない (ci_external 無視可)
+#   - 秘密情報・destructive ops は profile で true なら hook 追加
+#
+# 出典: Sakasegawa "Minimum Viable Harness 週1" 相当 / HumanLayer iteration-driven
+
+name: daily-utility
+status: complete
+description: |
+  個人用 CLI ツール、日常スクリプト、shell utility などの小規模プロジェクト向け。
+  最小限の harness で、PostToolUse auto-format と pre-commit lint のみを強制する。
+  複雑な subagent チームや CI は持たない。
+
+extends: null
+
+# このアーキタイプで生成するファイル一覧
+# src: assets/templates/ 配下の .tmpl ファイル相対パス
+# dest: 対象プロジェクト cwd からの相対パス
+# mode: ファイルモード (hook script 等の実行権限)
+# merge: 既存ファイルとの統合モード (overwrite / skip_if_exists / json-deep)
+templates:
+  # CLAUDE.md (≤50行・ポインタ主義)
+  - src: daily-utility/CLAUDE.md.tmpl
+    dest: CLAUDE.md
+    merge: skip_if_exists
+
+  # 最小 reviewer subagent (task-type, read-only tools)
+  - src: daily-utility/subagents/reviewer.md.tmpl
+    dest: .claude/subagents/reviewer.md
+    merge: overwrite
+
+  # PostToolUse: 編集後 auto-format (言語別 formatter 自動検出)
+  - src: daily-utility/hooks/post-edit-format.sh.tmpl
+    dest: .claude/hooks/post-edit-format.sh
+    mode: "0755"
+    merge: overwrite
+
+  # pre-commit: lint 実行 (言語別 linter 自動検出)
+  - src: daily-utility/hooks/pre-commit-lint.sh.tmpl
+    dest: .claude/hooks/pre-commit-lint.sh
+    mode: "0755"
+    merge: overwrite
+
+  # settings.json: permissions + hooks 登録 (JSON-deep merge)
+  - src: daily-utility/settings.patch.json.tmpl
+    dest: .claude/settings.json
+    merge: json-deep
+
+  # git pre-commit hook: .claude/hooks/pre-commit-lint.sh を呼び出す
+  # 既存 .git/hooks/pre-commit を絶対に壊さない
+  - src: daily-utility/validation/precommit.sh.tmpl
+    dest: .git/hooks/pre-commit
+    mode: "0755"
+    merge: skip_if_exists
+
+  # 生成理由ログ (ユーザーの将来のセルフドキュメンテーション用)
+  - src: daily-utility/docs/harness.md.tmpl
+    dest: docs/harness.md
+    merge: skip_if_exists
+
+  # 共通ヘッダ (将来の archetype で再利用するフラグメント)
+  # shared テンプレは _shared/ から取り込む
+  # ただし MVP では未使用
+
+# 条件付きで追加するテンプレート (profile に応じて)
+conditional_templates:
+  # handles_secrets=true なら secret-block hook を追加
+  - condition: "HANDLES_SECRETS"
+    src: _shared/hooks/block-secret-commit.sh.tmpl
+    dest: .claude/hooks/block-secret-commit.sh
+    mode: "0755"
+    merge: overwrite
+
+  # destructive_ops に "rm-rf" が含まれれば ブロック hook
+  - condition: "DESTRUCTIVE_OPS_CONTAINS_RM_RF"
+    src: _shared/hooks/block-rm-rf.sh.tmpl
+    dest: .claude/hooks/block-rm-rf.sh
+    mode: "0755"
+    merge: overwrite
+
+# テンプレート変数 (profile.json から導出)
+# この yaml の templates に現れる {{VAR}} の意味を宣言
+variables:
+  PROJECT_NAME: "{{ project.name }}"
+  PROJECT_SUMMARY: "{{ project.summary | default('') }}"
+  LANGUAGES_CSV: "{{ project.languages | join(',') }}"
+  PRIMARY_LANGUAGE: "{{ project.languages[0] }}"
+  LOCALE: "{{ meta.locale }}"
+  PRECOMMIT_STRICTNESS: "{{ workflow.precommit_strictness }}"
+  HANDLES_SECRETS: "{{ safety.handles_secrets }}"
+  DESTRUCTIVE_OPS_CONTAINS_RM_RF: "{{ 'rm-rf' in safety.destructive_ops }}"
+  INTENT_1: "{{ meta.intents[0] | default('') }}"
+  INTENT_2: "{{ meta.intents[1] | default('') }}"
+  INTENT_3: "{{ meta.intents[2] | default('') }}"
+  REQUIRED_CHECKS_CSV: "{{ quality_gates.required_checks | join(',') }}"
+
+# 生成される subagents (Validator C08 での存在確認に使用)
+subagents:
+  - reviewer
+
+# 登録される hooks (Validator C04/C05 での存在確認に使用)
+hooks:
+  PostToolUse:
+    - matcher: "Edit|Write"
+      script: ".claude/hooks/post-edit-format.sh"
+  PreToolUse:
+    # handles_secrets=true の時のみ
+    - matcher: "Bash"
+      script: ".claude/hooks/block-secret-commit.sh"
+      condition: "HANDLES_SECRETS"
+    # destructive_ops に rm-rf
+    - matcher: "Bash"
+      script: ".claude/hooks/block-rm-rf.sh"
+      condition: "DESTRUCTIVE_OPS_CONTAINS_RM_RF"

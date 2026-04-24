@@ -1,0 +1,25 @@
+# production-saas archetype: Next.js/Supabase 等の商用 SaaS 向け
+#
+# MVP スコープ: stub のみ。Phase 8 で実装。
+# 設計方針 (将来):
+#   - daily-utility extends (共通基盤)
+#   - Plan → Work → Review ワークフロー
+#   - 全層品質ゲート (PostToolUse → pre-commit → CI → review)
+#   - 3 subagents: code-reviewer / security-reviewer / test-author
+#   - GitHub Actions CI YAML 自動生成
+#   - 秘密情報ブロック / linter 設定ファイル保護 / PR gate hook
+
+name: production-saas
+status: planned
+description: |
+  Next.js / Supabase / Stripe 等、認証・決済・CI/CD を伴う商用 SaaS 向け。
+  Plan → Work → Review ワークフローと全層品質ゲートを scaffold する。
+  MVP では未実装。Phase 8 で daily-utility の上に差分として実装予定。
+
+extends: daily-utility
+
+templates: []
+conditional_templates: []
+variables: {}
+subagents: []
+hooks: {}

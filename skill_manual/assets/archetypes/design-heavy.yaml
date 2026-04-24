@@ -1,0 +1,24 @@
+# design-heavy archetype: Tailwind + shadcn/ui 等のデザイン重視フロントエンド向け
+#
+# MVP スコープ: stub のみ。Phase 8 で実装。
+# 設計方針 (将来):
+#   - daily-utility extends
+#   - ui-reviewer / a11y-reviewer subagents
+#   - PostToolUse screenshot hook (gstack / Playwright available fallback)
+#   - E2E via accessibility tree (token 効率 90% 削減)
+#   - Expert Pool パターン (視点別 subagent 切替)
+
+name: design-heavy
+status: planned
+description: |
+  Tailwind / shadcn/ui / デザインシステム中心のフロントエンドプロジェクト向け。
+  UI レビュー、a11y チェック、スクリーンショット差分を scaffold する。
+  MVP では未実装。Phase 8 で実装予定。
+
+extends: daily-utility
+
+templates: []
+conditional_templates: []
+variables: {}
+subagents: []
+hooks: {}
