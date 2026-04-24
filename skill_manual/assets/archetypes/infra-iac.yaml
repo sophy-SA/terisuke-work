@@ -1,0 +1,26 @@
+# infra-iac archetype: Terraform / Ansible / K8s manifests / Helm chart
+#
+# MVP スコープ: stub のみ。Phase 8d で template を実装。
+# 設計方針 (将来):
+#   - daily-utility extends
+#   - plan → review → apply を machine-enforced
+#   - terraform apply / kubectl apply / helm upgrade を PreToolUse で approval gate
+#   - terraform plan の差分 summary を PR 説明に自動挿入
+#   - drift detection scheduled job (scheduled remote agent 連携)
+#   - secret scan が daily-utility より厳格 (IaC ファイルは tfvars / .env / kustomize secrets が点在)
+#   - policy as code (OPA / conftest) チェック
+
+name: infra-iac
+status: planned
+description: |
+  Terraform / Ansible / K8s manifests / Helm chart など Infrastructure as Code プロジェクト向け。
+  plan/apply の approval gate、drift detection、policy-as-code チェックを scaffold する。
+  MVP では未実装。Phase 8d で実装予定。
+
+extends: daily-utility
+
+templates: []
+conditional_templates: []
+variables: {}
+subagents: []
+hooks: {}

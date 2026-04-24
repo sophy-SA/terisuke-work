@@ -36,11 +36,33 @@ harness-generator が配置可能な hook テンプレート一覧。
 |---|---|---|---|
 | `block-large-artifact` | `archetype=ml-data` | PreToolUse | `Write` |
 
-### design-heavy 系 (Phase 8)
+### library-package 系 (Phase 8c)
 
 | hook ID | 条件 | イベント | matcher |
 |---|---|---|---|
-| `post-edit-screenshot` | `archetype=design-heavy` AND gstack 利用可 | PostToolUse | `Edit|Write` |
+| `check-semver` | `archetype=library-package` | PreToolUse | `Bash(git tag:*)` |
+| `check-changelog` | `archetype=library-package` | PreToolUse | `Bash(git commit:*)` |
+
+### mobile-app 系 (Phase 8b)
+
+| hook ID | 条件 | イベント | matcher |
+|---|---|---|---|
+| `block-signing-secret` | `archetype=mobile-app` | PreToolUse | `Edit|Write` |
+| `protect-manifest` | `archetype=mobile-app` | PreToolUse | `Edit|Write` |
+
+### infra-iac 系 (Phase 8d)
+
+| hook ID | 条件 | イベント | matcher |
+|---|---|---|---|
+| `gate-terraform-apply` | `archetype=infra-iac` | PreToolUse | `Bash(terraform apply:*)` |
+| `gate-k8s-apply` | `archetype=infra-iac` | PreToolUse | `Bash(kubectl apply:*)` |
+| `gate-helm-upgrade` | `archetype=infra-iac` | PreToolUse | `Bash(helm upgrade:*)` |
+
+### design_focus 系 (Phase 8、条件付きで全 archetype)
+
+| hook ID | 条件 | イベント | matcher |
+|---|---|---|---|
+| `post-edit-screenshot` | `project.design_focus=true` AND gstack/Playwright 利用可 | PostToolUse | `Edit|Write` |
 
 ---
 

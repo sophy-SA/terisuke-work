@@ -19,10 +19,13 @@ Output:
             "archetype_primary": "daily-utility",
             "archetype_scores": {
                 "daily-utility": 0.72,
-                "production-saas": 0.15,
-                ...
+                "library-package": 0.08,
+                "production-saas": 0.10,
+                "mobile-app": 0.03,
+                "ml-data": 0.04,
+                "infra-iac": 0.03
             },
-            "mixed_warning": false  # True なら top2 の差が 0.15 未満
+            "mixed_warning": false
         }
 """
 
@@ -34,7 +37,14 @@ import sys
 from typing import Any
 
 
-ARCHETYPES = ["daily-utility", "production-saas", "ml-data", "design-heavy"]
+ARCHETYPES = [
+    "daily-utility",
+    "library-package",
+    "production-saas",
+    "mobile-app",
+    "ml-data",
+    "infra-iac",
+]
 
 
 def score_daily_utility(p: dict[str, Any]) -> float:
@@ -45,7 +55,6 @@ def score_daily_utility(p: dict[str, Any]) -> float:
     safety = p.get("safety", {})
 
     root_kind = project.get("root_kind", []) or []
-    languages = project.get("languages", []) or []
     required = set(qg.get("required_checks", []) or [])
 
     if "cli" in root_kind:
@@ -64,6 +73,26 @@ def score_daily_utility(p: dict[str, Any]) -> float:
     # cli のみ (他の root_kind がない)
     if root_kind == ["cli"]:
         score += 0.20
+    return score
+
+
+def score_library_package(p: dict[str, Any]) -> float:
+    score = 0.0
+    project = p.get("project", {})
+    qg = p.get("quality_gates", {})
+
+    root_kind = project.get("root_kind", []) or []
+    required = set(qg.get("required_checks", []) or [])
+
+    if "library" in root_kind:
+        score += 0.50
+    if {"typecheck", "unit-test"}.issubset(required):
+        score += 0.20
+    if "api-compat" in required or "semver-check" in required:
+        score += 0.20
+    # CI は library には通常必要
+    if not qg.get("ci_external", False):
+        score += 0.05
     return score
 
 
@@ -92,6 +121,27 @@ def score_production_saas(p: dict[str, Any]) -> float:
     return score
 
 
+def score_mobile_app(p: dict[str, Any]) -> float:
+    score = 0.0
+    project = p.get("project", {})
+    qg = p.get("quality_gates", {})
+
+    root_kind = project.get("root_kind", []) or []
+    languages = project.get("languages", []) or []
+    required = set(qg.get("required_checks", []) or [])
+
+    if "mobile" in root_kind:
+        score += 0.50
+    # Swift/Kotlin/JS/TS/Dart (Flutter だが Dart は enum に無いので approx)
+    if any(l in ("swift", "kotlin") for l in languages):
+        score += 0.20
+    if "visual-regression" in required or "integration-test" in required:
+        score += 0.15
+    if "a11y" in required:
+        score += 0.10
+    return score
+
+
 def score_ml_data(p: dict[str, Any]) -> float:
     score = 0.0
     project = p.get("project", {})
@@ -116,36 +166,42 @@ def score_ml_data(p: dict[str, Any]) -> float:
     return score
 
 
-def score_design_heavy(p: dict[str, Any]) -> float:
+def score_infra_iac(p: dict[str, Any]) -> float:
     score = 0.0
     project = p.get("project", {})
     qg = p.get("quality_gates", {})
-    review = p.get("review", {})
+    safety = p.get("safety", {})
+    workflow = p.get("workflow", {})
 
     root_kind = project.get("root_kind", []) or []
-    languages = project.get("languages", []) or []
     required = set(qg.get("required_checks", []) or [])
-    specialized = set(review.get("specialized_reviewers", []) or [])
+    destructive = set(safety.get("destructive_ops", []) or [])
 
-    if "design" in root_kind:
-        score += 0.45
-    if "a11y" in required:
+    if "infra" in root_kind:
+        score += 0.50
+    if "infra-plan-review" in required:
         score += 0.20
-    if "visual-regression" in required:
-        score += 0.20
-    if specialized & {"ui", "a11y"}:
+    if destructive & {"terraform-apply", "helm-upgrade", "k8s-apply", "deploy"}:
+        score += 0.15
+    if workflow.get("plan_work_review", False):
         score += 0.10
-    if languages and languages[0] in ("typescript", "javascript"):
+    # IaC では secret 扱いはほぼ必須
+    if safety.get("handles_secrets", False):
         score += 0.05
     return score
+
+
+# design-heavy は削除済み (project.design_focus フラグに統合)
 
 
 def compute(partial_profile: dict[str, Any]) -> dict[str, Any]:
     raw_scores = {
         "daily-utility": score_daily_utility(partial_profile),
+        "library-package": score_library_package(partial_profile),
         "production-saas": score_production_saas(partial_profile),
+        "mobile-app": score_mobile_app(partial_profile),
         "ml-data": score_ml_data(partial_profile),
-        "design-heavy": score_design_heavy(partial_profile),
+        "infra-iac": score_infra_iac(partial_profile),
     }
     total = sum(raw_scores.values())
     if total <= 0:

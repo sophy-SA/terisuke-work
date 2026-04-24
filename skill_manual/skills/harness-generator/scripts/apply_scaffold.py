@@ -33,6 +33,30 @@ import sys
 from pathlib import Path
 from typing import Any
 
+
+def _resolve_assets_dir(explicit: str | None = None) -> Path:
+    """assets ディレクトリを解決する (Phase 9 packaging 対応).
+
+    優先順位:
+    1. 引数で明示指定
+    2. 環境変数 HARNESS_FORGE_ASSETS
+    3. Script location からの相対パス (symlink は follow される)
+    """
+    if explicit:
+        return Path(explicit).resolve()
+    env = os.environ.get("HARNESS_FORGE_ASSETS")
+    if env:
+        return Path(env).resolve()
+    # scripts/ → skill/ → skills/ → repo_root/
+    here = Path(__file__).resolve()
+    candidate = here.parents[3] / "assets"
+    if candidate.exists():
+        return candidate
+    raise SystemExit(
+        "ERROR: assets dir を解決できません。--archetypes-dir/--templates-dir で指定するか、"
+        "HARNESS_FORGE_ASSETS 環境変数を設定してください。"
+    )
+
 sys.path.insert(0, str(Path(__file__).parent))
 try:
     from render import render  # type: ignore[import-not-found]
@@ -110,6 +134,7 @@ def flatten_profile(profile: dict[str, Any]) -> dict[str, Any]:
 
     languages = project.get("languages", []) or []
     root_kind = project.get("root_kind", []) or []
+    mobile_platforms = project.get("mobile_platforms", []) or []
     required_checks = qg.get("required_checks", []) or []
     destructive_ops = safety.get("destructive_ops", []) or []
     intents = meta.get("intents", []) or []
@@ -121,6 +146,13 @@ def flatten_profile(profile: dict[str, Any]) -> dict[str, Any]:
         "PRIMARY_LANGUAGE": languages[0] if languages else "",
         "ROOT_KIND_CSV": ",".join(root_kind),
         "ARCHETYPE_PRIMARY": profile.get("archetype_primary", ""),
+        "DESIGN_FOCUS": bool(project.get("design_focus", False)),
+        "MOBILE_PLATFORMS_CSV": ",".join(mobile_platforms),
+        "MOBILE_PLATFORM_IOS": "ios" in mobile_platforms,
+        "MOBILE_PLATFORM_ANDROID": "android" in mobile_platforms,
+        "MOBILE_PLATFORM_RN": "react-native" in mobile_platforms,
+        "MOBILE_PLATFORM_FLUTTER": "flutter" in mobile_platforms,
+        "MOBILE_MULTI_PLATFORM": len(mobile_platforms) > 1,
         "LOCALE": meta.get("locale", "ja"),
         "PRECOMMIT_STRICTNESS": workflow.get("precommit_strictness", "lint-only"),
         "PLAN_WORK_REVIEW": bool(workflow.get("plan_work_review", False)),
@@ -174,24 +206,43 @@ def load_archetype_chain(archetypes_dir: Path, name: str) -> list[dict[str, Any]
 
 
 def merge_archetype_chain(chain: list[dict[str, Any]]) -> dict[str, Any]:
-    """親→子の順で templates / conditional_templates / hooks / subagents / variables をマージ"""
-    merged: dict[str, Any] = {
+    """親→子の順で templates / conditional_templates / hooks / subagents / variables をマージ.
+
+    重要: 同一 dest の template は**子が親を上書き**する (extends の本来の意味)。
+    dict の挿入順保持により、親の位置を保ったまま child の内容に差し替わる。
+    subagents も同様に dedup する。
+    """
+    # dest → template entry
+    templates_by_dest: dict[str, dict[str, Any]] = {}
+    conditional_by_key: dict[str, dict[str, Any]] = {}
+    subagents_seen: list[str] = []
+    merged_hooks: dict[str, list[dict[str, Any]]] = {}
+    merged_variables: dict[str, Any] = {}
+
+    for a in chain:  # parent first, child last
+        for t in a.get("templates") or []:
+            dest = t.get("dest", "")
+            templates_by_dest[dest] = t  # child wins
+        for t in a.get("conditional_templates") or []:
+            # condition + dest を key として dedup
+            key = (t.get("condition", ""), t.get("dest", ""))
+            conditional_by_key[str(key)] = t
+        for s in a.get("subagents") or []:
+            if s not in subagents_seen:
+                subagents_seen.append(s)
+        merged_variables.update(a.get("variables") or {})
+        for event, hooks in (a.get("hooks") or {}).items():
+            merged_hooks.setdefault(event, []).extend(hooks)
+
+    return {
         "name": chain[-1].get("name", ""),
         "status": chain[-1].get("status", ""),
-        "templates": [],
-        "conditional_templates": [],
-        "subagents": [],
-        "hooks": {},
-        "variables": {},
+        "templates": list(templates_by_dest.values()),
+        "conditional_templates": list(conditional_by_key.values()),
+        "subagents": subagents_seen,
+        "hooks": merged_hooks,
+        "variables": merged_variables,
     }
-    for a in chain:
-        merged["templates"].extend(a.get("templates") or [])
-        merged["conditional_templates"].extend(a.get("conditional_templates") or [])
-        merged["subagents"].extend(a.get("subagents") or [])
-        merged["variables"].update(a.get("variables") or {})
-        for event, hooks in (a.get("hooks") or {}).items():
-            merged["hooks"].setdefault(event, []).extend(hooks)
-    return merged
 
 
 # ============================================================================
@@ -321,10 +372,11 @@ def eval_condition(condition: str, variables: dict[str, Any]) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--profile", required=True, type=str, help="profile.json パス")
-    parser.add_argument("--archetypes-dir", required=True, type=str, help="assets/archetypes/ パス")
-    parser.add_argument("--templates-dir", required=True, type=str, help="assets/templates/ パス")
-    parser.add_argument("--schema", required=True, type=str, help="profile.schema.json パス")
+    parser.add_argument("--profile", default="./profile.json", type=str, help="profile.json パス (既定: ./profile.json)")
+    parser.add_argument("--archetypes-dir", default=None, type=str, help="assets/archetypes/ パス (省略時は自動解決)")
+    parser.add_argument("--templates-dir", default=None, type=str, help="assets/templates/ パス (省略時は自動解決)")
+    parser.add_argument("--schema", default=None, type=str, help="profile.schema.json パス (省略時は自動解決)")
+    parser.add_argument("--assets-dir", default=None, type=str, help="assets/ のルート (archetypes/templates/schema をまとめて解決)")
     parser.add_argument(
         "--force-overwrite",
         action="append",
@@ -341,7 +393,12 @@ def main() -> int:
 
     profile = json.loads(profile_path.read_text(encoding="utf-8"))
 
-    schema_path = Path(args.schema).resolve()
+    # assets path 解決 (Phase 9 packaging 対応)
+    if args.assets_dir:
+        assets_root = Path(args.assets_dir).resolve()
+    else:
+        assets_root = _resolve_assets_dir()
+    schema_path = Path(args.schema).resolve() if args.schema else (assets_root / "knowledge" / "schema" / "profile.schema.json")
     errs = validate_profile(profile, schema_path)
     if errs:
         print("ERROR: profile.json schema validation failed", file=sys.stderr)
@@ -350,8 +407,8 @@ def main() -> int:
         return 2
 
     archetype_name = profile["archetype_primary"]
-    archetypes_dir = Path(args.archetypes_dir).resolve()
-    templates_dir = Path(args.templates_dir).resolve()
+    archetypes_dir = Path(args.archetypes_dir).resolve() if args.archetypes_dir else (assets_root / "archetypes")
+    templates_dir = Path(args.templates_dir).resolve() if args.templates_dir else (assets_root / "templates")
 
     chain = load_archetype_chain(archetypes_dir, archetype_name)
     status = chain[-1].get("status", "")
@@ -364,6 +421,17 @@ def main() -> int:
             "  profile.archetype_primary を 'daily-utility' に変更して再実行してください。",
             file=sys.stderr,
         )
+        return 3
+
+    # deprecated archetype のハンドリング (design-heavy → project.design_focus flag)
+    if status == "deprecated":
+        print(
+            f"ERROR: archetype '{archetype_name}' は廃止されました。",
+            file=sys.stderr,
+        )
+        desc = chain[-1].get("description", "").strip()
+        if desc:
+            print(f"  {desc}", file=sys.stderr)
         return 3
 
     merged_archetype = merge_archetype_chain(chain)

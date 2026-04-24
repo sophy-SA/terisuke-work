@@ -154,9 +154,16 @@ def load_answers_yaml(path: Path) -> dict[str, Any]:
 
 
 def resolve_schema_path(explicit: str | None) -> Path:
+    """schema パスを解決する (Phase 9 packaging 対応).
+
+    優先順位: 明示 > HARNESS_FORGE_ASSETS 環境変数 > script location 相対
+    """
     if explicit:
         return Path(explicit).resolve()
-    # このスクリプトからの相対: ../../../assets/knowledge/schema/profile.schema.json
+    import os
+    env = os.environ.get("HARNESS_FORGE_ASSETS")
+    if env:
+        return (Path(env) / "knowledge" / "schema" / "profile.schema.json").resolve()
     here = Path(__file__).resolve()
     return (here.parents[3] / "assets" / "knowledge" / "schema" / "profile.schema.json").resolve()
 

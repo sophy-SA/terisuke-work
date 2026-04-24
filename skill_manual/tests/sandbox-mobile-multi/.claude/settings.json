@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(xcodebuild -scheme:*)",
+      "Bash(xcodebuild -workspace:*)",
+      "Bash(xcodebuild -project:*)",
+      "Bash(xcrun simctl:*)",
+      "Bash(swift test:*)",
+      "Bash(swift-format:*)",
+      "Bash(swiftlint:*)",
+      "Bash(pod install:*)",
+      "Bash(pod update:*)",
+      "Bash(./gradlew build:*)",
+      "Bash(./gradlew test:*)",
+      "Bash(./gradlew lint:*)",
+      "Bash(./gradlew ktlintCheck:*)",
+      "Bash(./gradlew assembleDebug:*)",
+      "Bash(./gradlew connectedAndroidTest:*)",
+      "Bash(./gradlew connectedDebugAndroidTest:*)",
+      "Bash(gradle wrapper:*)",
+      "Bash(ktlint:*)",
+      "Bash(detekt:*)",
+      "Bash(adb devices:*)",
+      "Bash(adb logcat:*)",
+      "Bash(npx react-native run-ios:*)",
+      "Bash(npx react-native run-android:*)",
+      "Bash(npx react-native start:*)",
+      "Bash(npx react-native bundle:*)",
+      "Bash(npm test:*)",
+      "Bash(yarn test:*)",
+      "Bash(yarn ios:*)",
+      "Bash(yarn android:*)",
+      "Bash(npx detox:*)",
+      "Bash(flutter run:*)",
+      "Bash(flutter test:*)",
+      "Bash(flutter build apk:*)",
+      "Bash(flutter build ios:*)",
+      "Bash(flutter analyze:*)",
+      "Bash(flutter pub get:*)",
+      "Bash(flutter pub upgrade:*)",
+      "Bash(dart analyze:*)",
+      "Bash(dart format:*)",
+      "Bash(fastlane:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/block-signing-secret.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/protect-manifest.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

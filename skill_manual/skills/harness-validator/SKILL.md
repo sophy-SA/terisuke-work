@@ -41,12 +41,13 @@ allowed-tools: Read, Glob, Grep, Bash(python3:*), Bash(ls:*), Bash(cat:*), Bash(
 ## Step 3: `run_all.py` 実行
 
 ```bash
-python3 .../scripts/run_all.py \
+python3 "${CLAUDE_SKILL_DIR}/scripts/run_all.py" \
   --target . \
   --output-json ./harness-report.json \
-  --output-md ./harness-report.md \
-  --schema <repo>/assets/knowledge/schema/report.schema.json
+  --output-md ./harness-report.md
 ```
+
+asset path は自動解決されます (install.sh 経由 symlink install なら何もせずとも動作)。
 
 ## Step 4: 結果提示
 

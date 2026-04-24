@@ -124,10 +124,10 @@ Q1.3 プロジェクトの主構造は? (上位2つ)
 `scripts/write_profile.py` に全回答を渡して実行:
 
 ```bash
-python3 .../scripts/write_profile.py --output ./profile.json
+python3 "${CLAUDE_SKILL_DIR}/scripts/write_profile.py" --output ./profile.json
 ```
 
-スクリプトは以下を実行:
+asset path (schema) は自動解決されます。スクリプトは以下を実行:
 1. 回答を profile schema (v1.0) にマップ
 2. `assets/knowledge/schema/profile.schema.json` で検証
 3. エラーがあれば修正を促す (再質問 or abort)

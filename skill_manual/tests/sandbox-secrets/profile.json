@@ -10,9 +10,11 @@
   "archetype_primary": "daily-utility",
   "archetype_scores": {
     "daily-utility": 0.65,
-    "production-saas": 0.25,
-    "ml-data": 0.05,
-    "design-heavy": 0.05
+    "library-package": 0.04,
+    "production-saas": 0.22,
+    "mobile-app": 0.02,
+    "ml-data": 0.04,
+    "infra-iac": 0.03
   },
   "workflow": {
     "plan_work_review": false,

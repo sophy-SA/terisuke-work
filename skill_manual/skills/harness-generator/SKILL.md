@@ -66,11 +66,13 @@ ls profile.json 2>/dev/null
 ## Step 5: apply_scaffold.py の実行
 
 ```bash
-python3 .../scripts/apply_scaffold.py \
-  --profile ./profile.json \
-  --archetypes-dir <repo>/assets/archetypes \
-  --templates-dir <repo>/assets/templates \
-  --schema <repo>/assets/knowledge/schema/profile.schema.json
+python3 "${CLAUDE_SKILL_DIR}/scripts/apply_scaffold.py" --profile ./profile.json
+```
+
+asset path は自動解決されます (install.sh 経由 symlink install なら何もせずとも動作)。repo を移動した場合は `HARNESS_FORGE_ASSETS` 環境変数を設定:
+
+```bash
+export HARNESS_FORGE_ASSETS=/path/to/harness-forge/assets
 ```
 
 スクリプトは以下を実行:

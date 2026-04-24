@@ -51,16 +51,26 @@
 
 ## Archetype 設計
 
-4つの archetype を YAML で定義 (`assets/archetypes/*.yaml`):
+6つの archetype を YAML で定義 (`assets/archetypes/*.yaml`):
 
 | Archetype | MVP | 特徴 |
 |---|---|---|
 | `daily-utility` | ✅ | 個人用 CLI、最小 harness、PostToolUse format + pre-commit lint |
+| `library-package` | 計画 | 公開ライブラリ、semver / CHANGELOG / API 後方互換 / release workflow |
 | `production-saas` | 計画 | 商用 SaaS、Plan→Work→Review、全層品質ゲート |
+| `mobile-app` | 計画 | モバイル、xcodebuild / gradle / flutter、UI テストランナー、署名漏洩ブロック |
 | `ml-data` | 計画 | ML パイプライン、データ妥当性検証、大容量 artifact ブロック |
-| `design-heavy` | 計画 | UI/UX 重視、a11y レビュー、スクリーンショット差分 |
+| `infra-iac` | 計画 | IaC、plan/apply approval gate、drift detection、policy-as-code |
 
-Archetype YAML は `extends:` でコンポジション可能（production-saas extends daily-utility 等）。
+Archetype YAML は `extends:` でコンポジション可能（library-package/production-saas/mobile-app/ml-data/infra-iac はすべて daily-utility を extends）。
+
+### Design Focus フラグ
+
+以前は archetype の一つだった `design-heavy` は、**`project.design_focus` boolean フラグ** に統合されました。どの archetype でも `design_focus: true` にすると:
+
+- `review.specialized_reviewers` に `ui` / `a11y` を自動追加
+- CLAUDE.md に design review workflow 節を追加
+- `project.root_kind` に `web` / `mobile` がある場合、visual-regression hook を推奨
 
 ## テンプレートシステム
 

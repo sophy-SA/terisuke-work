@@ -15,8 +15,8 @@
   "properties": {
     "schema_version": {
       "type": "string",
-      "const": "1.0",
-      "description": "スキーマバージョン。互換性のないメジャー変更で bump"
+      "enum": ["1.0", "1.1"],
+      "description": "スキーマバージョン。互換性のないメジャー変更で bump。1.1 で design-heavy archetype を flag 化"
     },
     "generated_at": {
       "type": "string",
@@ -51,6 +51,7 @@
               "rust",
               "swift",
               "kotlin",
+              "dart",
               "ruby",
               "java",
               "csharp",
@@ -61,20 +62,34 @@
           },
           "description": "主要言語。linter/formatter 自動検出に使用"
         },
+        "mobile_platforms": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["ios", "android", "react-native", "flutter"]
+          },
+          "default": [],
+          "description": "mobile-app archetype のプラットフォーム。空配列 or archetype 非 mobile-app なら無視される"
+        },
         "root_kind": {
           "type": "array",
           "minItems": 1,
           "items": {
             "type": "string",
-            "enum": ["cli", "web", "notebook", "design", "mixed"]
+            "enum": ["cli", "web", "notebook", "mobile", "library", "infra", "mixed"]
           },
-          "description": "プロジェクトの主構造。アーキタイプ判定に使用"
+          "description": "プロジェクトの主構造。アーキタイプ判定の主要信号"
+        },
+        "design_focus": {
+          "type": "boolean",
+          "default": false,
+          "description": "デザイン品質 (UI/UX/a11y) を主要関心事にするか。true でどの archetype でも ui/a11y reviewer と関連 hook を自動追加"
         }
       }
     },
     "archetype_primary": {
       "type": "string",
-      "enum": ["daily-utility", "production-saas", "ml-data", "design-heavy"],
+      "enum": ["daily-utility", "library-package", "production-saas", "mobile-app", "ml-data", "infra-iac"],
       "description": "最優先アーキタイプ。Generator がこれで template set を決定"
     },
     "archetype_scores": {
@@ -82,9 +97,11 @@
       "description": "各アーキタイプのスコア (0.0〜1.0)。合計は 1.0 に正規化されるべき",
       "properties": {
         "daily-utility": { "type": "number", "minimum": 0, "maximum": 1 },
+        "library-package": { "type": "number", "minimum": 0, "maximum": 1 },
         "production-saas": { "type": "number", "minimum": 0, "maximum": 1 },
+        "mobile-app": { "type": "number", "minimum": 0, "maximum": 1 },
         "ml-data": { "type": "number", "minimum": 0, "maximum": 1 },
-        "design-heavy": { "type": "number", "minimum": 0, "maximum": 1 }
+        "infra-iac": { "type": "number", "minimum": 0, "maximum": 1 }
       },
       "additionalProperties": false
     },
@@ -124,7 +141,10 @@
               "integration-test",
               "security-scan",
               "a11y",
-              "visual-regression"
+              "visual-regression",
+              "api-compat",
+              "semver-check",
+              "infra-plan-review"
             ]
           },
           "default": ["lint", "format"],
@@ -149,10 +169,10 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["code", "security", "a11y", "perf", "ui"]
+            "enum": ["code", "security", "a11y", "perf", "ui", "api-compat", "infra"]
           },
           "default": [],
-          "description": "専門化 reviewer subagent のリスト。quality_gates.required_checks から自動推奨される"
+          "description": "専門化 reviewer subagent のリスト。quality_gates.required_checks と project.design_focus から自動推奨される"
         }
       }
     },
@@ -168,7 +188,7 @@
           "type": "array",
           "items": {
             "type": "string",
-            "enum": ["deploy", "db-migrate", "force-push", "rm-rf", "drop-table"]
+            "enum": ["deploy", "db-migrate", "force-push", "rm-rf", "drop-table", "terraform-apply", "helm-upgrade", "k8s-apply"]
           },
           "default": [],
           "description": "ガードすべき破壊的操作。対応する PreToolUse hook を生成"

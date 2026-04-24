@@ -102,15 +102,19 @@
 
 ### `project.root_kind[]` (required, array)
 
-許可値: `cli`, `web`, `notebook`, `design`, `mixed`
+許可値: `cli`, `library`, `web`, `mobile`, `notebook`, `infra`, `mixed`
 
-アーキタイプ判定の主要信号。複数選択可。
+アーキタイプ判定の主要信号。複数選択可。旧 `design` は `project.design_focus` フラグに統合済み。
+
+### `project.design_focus` (boolean, default: false)
+
+true にすると、どの archetype でも UI/a11y reviewer と関連 hook を自動追加する。旧 `design-heavy` archetype の後継。
 
 ### `archetype_primary` (required, enum)
 
-許可値: `daily-utility`, `production-saas`, `ml-data`, `design-heavy`
+許可値: `daily-utility`, `library-package`, `production-saas`, `mobile-app`, `ml-data`, `infra-iac`
 
-Generator がこの値で template set を決定。手動編集可能。
+Generator がこの値で template set を決定。手動編集可能。旧 `design-heavy` は `project.design_focus` フラグに統合済み。
 
 ### `workflow.precommit_strictness` (default: "lint-only")
 
@@ -121,7 +125,7 @@ Generator がこの値で template set を決定。手動編集可能。
 
 ### `quality_gates.required_checks[]`
 
-許可値: `lint`, `format`, `typecheck`, `unit-test`, `integration-test`, `security-scan`, `a11y`, `visual-regression`
+許可値: `lint`, `format`, `typecheck`, `unit-test`, `integration-test`, `security-scan`, `a11y`, `visual-regression`, `api-compat`, `semver-check`, `infra-plan-review`
 
 各項目に対し、対応する hook または CI job が生成される (archetype が対応する範囲で)。
 
@@ -131,9 +135,9 @@ true なら `.claude/hooks/block-secret-commit.sh` が必須配置される (Val
 
 ### `safety.destructive_ops[]`
 
-許可値: `deploy`, `db-migrate`, `force-push`, `rm-rf`, `drop-table`
+許可値: `deploy`, `db-migrate`, `force-push`, `rm-rf`, `drop-table`, `terraform-apply`, `helm-upgrade`, `k8s-apply`
 
-各項目に対し、PreToolUse hook でブロックするスクリプトが生成される。
+各項目に対し、PreToolUse hook でブロックするスクリプトが生成される。後半3つは infra-iac archetype で推奨。
 
 ### `meta.locale` (required)
 
