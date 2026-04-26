@@ -40,7 +40,7 @@ cd ~/harness-forge && make install                   # ~/.claude/skills/ に sym
 
 ```bash
 make help          # 全 target 表示
-make install       # symlink で 3 skill を install
+make install       # symlink で 4 skill を install
 make install-copy  # symlink ではなく copy
 make test          # E2E テスト 14 ケース実行
 make verify        # install + test + uninstall の往復
@@ -48,12 +48,12 @@ make uninstall     # install を取り消す
 make clean         # sandbox / report ファイル削除
 ```
 
-Claude Code を再起動すると `/harness-profiler`, `/harness-generator`, `/harness-validator` の 3 skill がメニューに出現します。
+Claude Code を再起動すると `/harness-profiler`, `/harness-generator`, `/harness-validator`, `/harness-evolver` の 4 skill がメニューに出現します。
 
 ### 確認
 
 ```
-/agents              # Library タブで 3 skill が見えるか確認
+/agents              # Library タブで 4 skill が見えるか確認
 ```
 
 ### アンインストール
@@ -85,16 +85,20 @@ bash ~/harness-forge/uninstall.sh
 
 # 3. scaffold の整合性チェック:
 /harness-validator         # harness-report.md / harness-report.json 出力
+
+# 4. (随時) archetype 更新後に既存 harness を進化:
+/harness-evolver           # drift 検出 → --apply で template_updated_safe を反映
 ```
 
 ## リポジトリ構成
 
 ```
 harness-forge/
-├── skills/              # 3 つの Skill 本体
+├── skills/              # 4 つの Skill 本体
 │   ├── harness-profiler/
 │   ├── harness-generator/
-│   └── harness-validator/
+│   ├── harness-validator/
+│   └── harness-evolver/
 ├── assets/              # Skill 横断のテンプレート・知識
 │   ├── archetypes/      # アーキタイプ定義 (YAML)
 │   ├── templates/       # scaffold 用テンプレート

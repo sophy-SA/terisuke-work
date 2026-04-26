@@ -1,18 +1,28 @@
 # アーキテクチャ
 
-## 3-skill family のデータフロー
+## 4-skill family のデータフロー
 
 ```
-┌─────────────────┐    profile.json     ┌───────────────────┐    scaffold files    ┌──────────────────┐
-│ harness-profiler│ ──────────────────► │ harness-generator │ ──────────────────►  │ harness-validator│
-│  (インタビュー)   │                    │  (実ファイル生成)  │                     │   (整合性検査)   │
-└─────────────────┘                     └───────────────────┘                      └──────────────────┘
-         ▲                                        │                                         │
-         │                                        ▼                                         ▼
-   ユーザー回答                              CLAUDE.md, .claude/*,                     harness-report.{json,md}
-                                          docs/harness.md, CI yml,
-                                          .harness-forge.state.json
+┌─────────────────┐  profile.json  ┌───────────────────┐  scaffold  ┌──────────────────┐
+│ harness-profiler│ ─────────────► │ harness-generator │ ─────────► │ harness-validator│
+│  (インタビュー)   │                │  (実ファイル生成)  │            │   (整合性検査)   │
+└─────────────────┘                └───────────────────┘            └──────────────────┘
+                                            │     ▲
+                                            ▼     │ (state.json + 現状ファイル)
+                                   ┌──────────────────────┐
+                                   │  harness-evolver     │
+                                   │  (drift 検出 + 反映)  │
+                                   └──────────────────────┘
+                                            │
+                                            ▼
+                                   .evolved-conflict.md
+                                   .harness-forge.evolution.log
 ```
+
+- **profiler** (1回目): プロジェクト属性をインタビュー → `profile.json`
+- **generator** (1回目): scaffold 一式生成 + `.harness-forge.state.json`
+- **validator** (随時): 整合性検査 → `harness-report.{json,md}`
+- **evolver** (archetype 更新後): 既存 harness と現 template の 3-way 比較 → drift 反映
 
 ## 設計原則
 

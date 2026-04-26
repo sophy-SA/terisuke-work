@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # install.sh
 # =========================================================================
-# harness-forge の 3 skill を ~/.claude/skills/ に symlink する。
+# harness-forge の 4 skill (profiler/generator/validator/evolver) を ~/.claude/skills/ に symlink する。
 # シンボリックリンクにすることで、repo 側の更新が即座に反映される。
 #
 # Usage:
@@ -41,7 +41,7 @@ fi
 
 mkdir -p "$SKILLS_DIR"
 
-SKILLS=("harness-profiler" "harness-generator" "harness-validator")
+SKILLS=("harness-profiler" "harness-generator" "harness-validator" "harness-evolver")
 INSTALLED=()
 SKIPPED=()
 

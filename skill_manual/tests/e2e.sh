@@ -34,6 +34,7 @@ FIXTURE_ML_DATA="$REPO_ROOT/tests/fixtures/profile.ml-data.json"
 
 GENERATOR_SCRIPT="$REPO_ROOT/skills/harness-generator/scripts/apply_scaffold.py"
 VALIDATOR_SCRIPT="$REPO_ROOT/skills/harness-validator/scripts/run_all.py"
+EVOLVER_SCRIPT="$REPO_ROOT/skills/harness-evolver/scripts/evolve.py"
 SCHEMA="$REPO_ROOT/assets/knowledge/schema/profile.schema.json"
 ARCHETYPES_DIR="$REPO_ROOT/assets/archetypes"
 TEMPLATES_DIR="$REPO_ROOT/assets/templates"
@@ -836,7 +837,7 @@ if [[ "${HARNESS_FORGE_SKIP_INSTALL_TEST:-0}" != "1" ]]; then
 
   # 既存 install を保護: 走行前に状態を記録
   PRE_EXISTING=()
-  for skill in harness-profiler harness-generator harness-validator; do
+  for skill in harness-profiler harness-generator harness-validator harness-evolver; do
     if [[ -e "$HOME/.claude/skills/$skill" ]] && [[ ! -L "$HOME/.claude/skills/$skill" ]]; then
       PRE_EXISTING+=("$skill")
     fi
@@ -848,7 +849,7 @@ if [[ "${HARNESS_FORGE_SKIP_INSTALL_TEST:-0}" != "1" ]]; then
     # 既存 symlink は退避 (テスト後復元)
     BACKUP_DIR="$REPO_ROOT/tests/.install-backup"
     rm -rf "$BACKUP_DIR" && mkdir -p "$BACKUP_DIR"
-    for skill in harness-profiler harness-generator harness-validator; do
+    for skill in harness-profiler harness-generator harness-validator harness-evolver; do
       if [[ -L "$HOME/.claude/skills/$skill" ]]; then
         mv "$HOME/.claude/skills/$skill" "$BACKUP_DIR/$skill"
       fi
@@ -857,8 +858,8 @@ if [[ "${HARNESS_FORGE_SKIP_INSTALL_TEST:-0}" != "1" ]]; then
     # install 実行
     bash "$REPO_ROOT/install.sh" >/dev/null
 
-    # 3 skill が symlink で存在するか
-    for skill in harness-profiler harness-generator harness-validator; do
+    # 4 skill が symlink で存在するか
+    for skill in harness-profiler harness-generator harness-validator harness-evolver; do
       if [[ ! -L "$HOME/.claude/skills/$skill" ]]; then
         fail "install 後に ~/.claude/skills/$skill が symlink でない"
       fi
@@ -869,11 +870,11 @@ if [[ "${HARNESS_FORGE_SKIP_INSTALL_TEST:-0}" != "1" ]]; then
         fail "$skill の symlink 先が不正: $RESOLVED (期待: $EXPECTED)"
       fi
     done
-    info "  ✓ install.sh で 3 skill symlink 作成"
+    info "  ✓ install.sh で 4 skill symlink 作成"
 
     # 二重 install (idempotent)
     bash "$REPO_ROOT/install.sh" >/dev/null
-    for skill in harness-profiler harness-generator harness-validator; do
+    for skill in harness-profiler harness-generator harness-validator harness-evolver; do
       if [[ ! -L "$HOME/.claude/skills/$skill" ]]; then
         fail "再 install 後に $skill が symlink でない"
       fi
@@ -883,15 +884,15 @@ if [[ "${HARNESS_FORGE_SKIP_INSTALL_TEST:-0}" != "1" ]]; then
     # uninstall 実行
     bash "$REPO_ROOT/uninstall.sh" >/dev/null
 
-    for skill in harness-profiler harness-generator harness-validator; do
+    for skill in harness-profiler harness-generator harness-validator harness-evolver; do
       if [[ -e "$HOME/.claude/skills/$skill" ]]; then
         fail "uninstall 後に ~/.claude/skills/$skill が残存"
       fi
     done
-    info "  ✓ uninstall.sh で 3 skill 削除"
+    info "  ✓ uninstall.sh で 4 skill 削除"
 
     # 復元
-    for skill in harness-profiler harness-generator harness-validator; do
+    for skill in harness-profiler harness-generator harness-validator harness-evolver; do
       if [[ -L "$BACKUP_DIR/$skill" ]]; then
         mv "$BACKUP_DIR/$skill" "$HOME/.claude/skills/$skill"
       fi
@@ -901,8 +902,164 @@ if [[ "${HARNESS_FORGE_SKIP_INSTALL_TEST:-0}" != "1" ]]; then
   fi
 fi
 
-# ---- Test 16: plugin manifest (.claude-plugin/plugin.json) 妥当性 ----
-info "Test 16: .claude-plugin/plugin.json 存在 + 妥当性"
+# ---- Test 17: harness-evolver drift 検出 + --apply ----
+info "Test 17: harness-evolver drift 検出 + 反映"
+SANDBOX_EVO="$REPO_ROOT/tests/sandbox-evolver"
+rm -rf "$SANDBOX_EVO" && mkdir -p "$SANDBOX_EVO"
+cp "$FIXTURE_PROFILE" "$SANDBOX_EVO/profile.json"
+
+# 初期 scaffold
+(cd "$SANDBOX_EVO" && python3 "$GENERATOR_SCRIPT" \
+  --profile ./profile.json \
+  --archetypes-dir "$ARCHETYPES_DIR" \
+  --templates-dir "$TEMPLATES_DIR" \
+  --schema "$SCHEMA")
+
+# 1. fresh scaffold は全 unchanged
+(cd "$SANDBOX_EVO" && python3 "$EVOLVER_SCRIPT" \
+  --profile ./profile.json \
+  --archetypes-dir "$ARCHETYPES_DIR" \
+  --templates-dir "$TEMPLATES_DIR" \
+  --schema "$SCHEMA" \
+  --output-json ./evo-1.json)
+
+UNCHANGED_COUNT=$(python3 -c "
+import json
+r = json.load(open('$SANDBOX_EVO/evo-1.json'))['report']
+print(r['summary'].get('unchanged', 0))
+")
+if [[ "$UNCHANGED_COUNT" -lt 5 ]]; then
+  fail "fresh scaffold で unchanged が $UNCHANGED_COUNT (>=5 期待)"
+fi
+info "  ✓ fresh scaffold: unchanged $UNCHANGED_COUNT 件"
+
+# 2. user 編集をシミュレート → user_edited_only
+echo "# user added comment" >> "$SANDBOX_EVO/.claude/subagents/reviewer.md"
+
+# 3. template 更新をシミュレート: templates をコピーして 1 ファイルだけ変更
+TEMPLATES_EVO="$SANDBOX_EVO/.evolved-templates"
+cp -r "$TEMPLATES_DIR" "$TEMPLATES_EVO"
+echo "# template-bumped-version" >> "$TEMPLATES_EVO/daily-utility/hooks/post-edit-format.sh.tmpl"
+
+# 4. state に偽の legacy file → removed_template_file
+python3 -c "
+import json, os
+state_path = '$SANDBOX_EVO/.harness-forge.state.json'
+with open(state_path) as f: s = json.load(f)
+s['file_hashes']['.claude/hooks/legacy-old.sh'] = 'sha256:abc'
+os.makedirs('$SANDBOX_EVO/.claude/hooks', exist_ok=True)
+with open('$SANDBOX_EVO/.claude/hooks/legacy-old.sh', 'w') as f:
+    f.write('# legacy stub')
+with open(state_path, 'w') as f: json.dump(s, f, indent=2)
+"
+
+# 5. dry-run で 3 カテゴリ検出 (修正済み templates dir を指す)
+(cd "$SANDBOX_EVO" && python3 "$EVOLVER_SCRIPT" \
+  --profile ./profile.json \
+  --archetypes-dir "$ARCHETYPES_DIR" \
+  --templates-dir "$TEMPLATES_EVO" \
+  --schema "$SCHEMA" \
+  --output-json ./evo-2.json)
+
+python3 -c "
+import json
+r = json.load(open('$SANDBOX_EVO/evo-2.json'))['report']
+s = r['summary']
+assert s.get('user_edited_only', 0) >= 1, f'user_edited_only 未検出: {s}'
+assert s.get('template_updated_safe', 0) >= 1, f'template_updated_safe 未検出: {s}'
+assert s.get('removed_template_file', 0) >= 1, f'removed_template_file 未検出: {s}'
+" || fail "evolver dry-run の カテゴリ判定が不正"
+info "  ✓ dry-run: user_edited_only / template_updated_safe / removed_template_file 検出"
+
+# 5. dry-run では disk 変更なし (user 編集行が残る)
+if ! grep -q "user added comment" "$SANDBOX_EVO/.claude/subagents/reviewer.md"; then
+  fail "dry-run で user 編集が消失"
+fi
+info "  ✓ dry-run は disk 不変"
+
+# 6. --apply で template_updated_safe のみ反映 (user 編集は保持)
+PRE_FORMAT_HASH=$(sha256sum "$SANDBOX_EVO/.claude/hooks/post-edit-format.sh" | awk '{print $1}')
+(cd "$SANDBOX_EVO" && python3 "$EVOLVER_SCRIPT" \
+  --profile ./profile.json \
+  --archetypes-dir "$ARCHETYPES_DIR" \
+  --templates-dir "$TEMPLATES_EVO" \
+  --schema "$SCHEMA" \
+  --apply \
+  --output-json ./evo-3.json) >/dev/null
+
+# user 編集は保持
+if ! grep -q "user added comment" "$SANDBOX_EVO/.claude/subagents/reviewer.md"; then
+  fail "--apply で user_edited_only ファイルが上書きされた"
+fi
+info "  ✓ --apply: user 編集 (user_edited_only) 保護"
+
+# post-edit-format.sh が新 template で上書きされている
+if ! grep -q "template-bumped-version" "$SANDBOX_EVO/.claude/hooks/post-edit-format.sh"; then
+  fail "--apply で template_updated_safe が反映されていない"
+fi
+info "  ✓ --apply: template_updated_safe を反映"
+
+# evolution log が記録されている
+if [[ ! -f "$SANDBOX_EVO/.harness-forge.evolution.log" ]]; then
+  fail ".harness-forge.evolution.log が生成されていない"
+fi
+info "  ✓ evolution log 生成"
+
+# 7. 衝突ケース: user 編集 + template 更新 → template_updated_conflict + .evolved-conflict.md
+echo "user-touched-conflict-test" >> "$SANDBOX_EVO/.claude/hooks/pre-commit-lint.sh"
+echo "# template-changed-too" >> "$TEMPLATES_EVO/daily-utility/hooks/pre-commit-lint.sh.tmpl"
+
+(cd "$SANDBOX_EVO" && python3 "$EVOLVER_SCRIPT" \
+  --profile ./profile.json \
+  --archetypes-dir "$ARCHETYPES_DIR" \
+  --templates-dir "$TEMPLATES_EVO" \
+  --schema "$SCHEMA" \
+  --apply \
+  --output-json ./evo-4.json) >/dev/null
+
+if [[ ! -f "$SANDBOX_EVO/.evolved-conflict.md" ]]; then
+  fail "conflict 発生時に .evolved-conflict.md が生成されていない"
+fi
+if ! grep -q "pre-commit-lint.sh" "$SANDBOX_EVO/.evolved-conflict.md"; then
+  fail ".evolved-conflict.md に conflict ファイル名が記載されていない"
+fi
+info "  ✓ conflict: .evolved-conflict.md 生成"
+
+# user 編集行がそのまま残っている (conflict は手動マージに委ねるので skip)
+if ! grep -q "user-touched-conflict-test" "$SANDBOX_EVO/.claude/hooks/pre-commit-lint.sh"; then
+  fail "conflict の user 編集が破棄された (--force なしのはず)"
+fi
+info "  ✓ conflict: user 編集破棄せず skip"
+
+# 8. --force で conflict も上書き
+(cd "$SANDBOX_EVO" && python3 "$EVOLVER_SCRIPT" \
+  --profile ./profile.json \
+  --archetypes-dir "$ARCHETYPES_DIR" \
+  --templates-dir "$TEMPLATES_EVO" \
+  --schema "$SCHEMA" \
+  --apply --force \
+  --output-json ./evo-5.json) >/dev/null
+
+if grep -q "user-touched-conflict-test" "$SANDBOX_EVO/.claude/hooks/pre-commit-lint.sh"; then
+  fail "--force で conflict が上書きされていない"
+fi
+info "  ✓ --force: conflict も上書き"
+
+# 9. 反映後 Validator green
+(cd "$SANDBOX_EVO" && python3 "$VALIDATOR_SCRIPT" \
+  --target . --profile ./profile.json) >/dev/null
+EVO_ERRORS=$(python3 -c "
+import json
+r = json.load(open('$SANDBOX_EVO/harness-report.json'))
+print(r['summary']['errors'])
+")
+if [[ "$EVO_ERRORS" -ne 0 ]]; then
+  fail "evolver 反映後に validator が $EVO_ERRORS errors"
+fi
+info "  ✓ 反映後 Validator errors == 0"
+
+# ---- Test 18: plugin manifest (.claude-plugin/plugin.json) 妥当性 ----
+info "Test 18: .claude-plugin/plugin.json 存在 + 妥当性"
 PLUGIN_MANIFEST="$REPO_ROOT/.claude-plugin/plugin.json"
 if [[ ! -f "$PLUGIN_MANIFEST" ]]; then
   fail ".claude-plugin/plugin.json が存在しない"

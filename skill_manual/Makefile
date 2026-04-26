@@ -13,7 +13,7 @@
 
 REPO_ROOT := $(shell pwd)
 SKILLS_DIR := $(HOME)/.claude/skills
-SKILLS := harness-profiler harness-generator harness-validator
+SKILLS := harness-profiler harness-generator harness-validator harness-evolver
 
 help:
 	@echo "harness-forge — make targets:"
