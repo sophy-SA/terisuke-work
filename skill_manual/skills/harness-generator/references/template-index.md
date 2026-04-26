@@ -98,16 +98,22 @@ status: complete (Phase 8b 実装済み)
 
 mobile-app archetype 採用時、`project.mobile_platforms[]` (ios / android / react-native / flutter) で対応プラットフォームを指定。空の場合は汎用テンプレートのみ (platform-specific hook は配置されない)。
 
-## ml-data (計画中)
+## ml-data (MVP ✅)
 
-status: planned (Phase 8 後半)
+status: complete
 
 `extends: daily-utility` — 以下を追加:
 
-- `ml-data/subagents/notebook-reviewer.md.tmpl`
-- `ml-data/subagents/data-validator.md.tmpl`
-- `ml-data/hooks/block-large-artifact.sh.tmpl`
-- `ml-data/.gitattributes.tmpl`
+- `ml-data/CLAUDE.md.tmpl` — 再現性 / DVC / nbstripout 案内 (overrides 親の CLAUDE.md)
+- `ml-data/subagents/notebook-reviewer.md.tmpl` — ipynb 構造・再現性レビュアー
+- `ml-data/subagents/data-validator.md.tmpl` — schema / 欠損率 / target leak 検査
+- `ml-data/hooks/block-large-artifact.sh.tmpl` — >50MB の model/dataset を block (DVC/lfs 案内)
+- `ml-data/hooks/check-notebook-output.sh.tmpl` — .ipynb の output 残存に警告
+- `ml-data/gitattributes.tmpl` — ipynb diff filter + LFS パターン例
+- `ml-data/settings.patch.json.tmpl` — jupyter / dvc / mlflow / pytest 等の許可 + hook 登録
+- `ml-data/docs/harness.md.tmpl` — ml-data 構成説明
+
+`BLOCK_LARGE_ARTIFACT_MB` 環境変数で 50MB 閾値を上書き可能。
 
 ## infra-iac (MVP ✅)
 

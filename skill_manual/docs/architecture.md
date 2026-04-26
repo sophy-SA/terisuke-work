@@ -53,14 +53,14 @@
 
 6つの archetype を YAML で定義 (`assets/archetypes/*.yaml`):
 
-| Archetype | MVP | 特徴 |
+| Archetype | 状態 | 特徴 |
 |---|---|---|
 | `daily-utility` | ✅ | 個人用 CLI、最小 harness、PostToolUse format + pre-commit lint |
-| `library-package` | 計画 | 公開ライブラリ、semver / CHANGELOG / API 後方互換 / release workflow |
-| `production-saas` | 計画 | 商用 SaaS、Plan→Work→Review、全層品質ゲート |
-| `mobile-app` | 計画 | モバイル、xcodebuild / gradle / flutter、UI テストランナー、署名漏洩ブロック |
-| `ml-data` | 計画 | ML パイプライン、データ妥当性検証、大容量 artifact ブロック |
-| `infra-iac` | 計画 | IaC、plan/apply approval gate、drift detection、policy-as-code |
+| `library-package` | ✅ | 公開ライブラリ、CHANGELOG 強制 / version-tag gate / public API 編集警告 / api-compat-reviewer |
+| `production-saas` | ✅ | 商用 SaaS、3 subagent (code/security/test-author) + pre-pr-gate + linter 設定保護 + CI YAML |
+| `mobile-app` | ✅ | iOS/Android/RN/Flutter、署名 secret block / xcodebuild & gradle release gate / mobile-reviewer |
+| `ml-data` | ✅ | ML パイプライン、>50MB artifact block / ipynb output 警告 / notebook-reviewer + data-validator |
+| `infra-iac` | ✅ | IaC、terraform/k8s/helm apply gate / state file 保護 / infra-reviewer |
 
 Archetype YAML は `extends:` でコンポジション可能（library-package/production-saas/mobile-app/ml-data/infra-iac はすべて daily-utility を extends）。
 

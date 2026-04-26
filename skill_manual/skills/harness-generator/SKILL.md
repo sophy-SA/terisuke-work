@@ -50,10 +50,15 @@ ls profile.json 2>/dev/null
 `profile.archetype_primary` を読み、`assets/archetypes/<archetype>.yaml` をロードする。
 `extends:` があれば再帰的に親の templates も含める。
 
-現在 MVP 対応:
-- `daily-utility` — 完全実装
-- `production-saas` / `ml-data` / `design-heavy` — stub (`status: planned`)。呼ばれたら警告して
-  "MVP では daily-utility のみサポート。profile.archetype_primary を変更してください" と案内。
+対応 archetype (全て `status: complete`):
+- `daily-utility` — 個人 CLI / 日常ツール
+- `library-package` — npm/PyPI/crates 公開ライブラリ
+- `production-saas` — Next.js/Supabase 等の商用 SaaS
+- `mobile-app` — iOS/Android/RN/Flutter
+- `infra-iac` — Terraform/K8s/Helm
+- `ml-data` — Jupyter + pytest + DVC/MLflow
+
+`design-heavy` は archetype ではなく `project.design_focus: true` フラグに統合済み。
 
 ## Step 4: 再実行判定
 
