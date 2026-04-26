@@ -829,6 +829,97 @@ assert has_nb, 'check-notebook-output が PreToolUse に未登録'
 fi
 info "  ✓ settings.json に ml-data hooks 登録"
 
+# ---- Test 15: install.sh / uninstall.sh 検証 (Phase 9) ----
+# Skip if HARNESS_FORGE_SKIP_INSTALL_TEST=1 (CI 等で ~/.claude を変更したくない場合)
+if [[ "${HARNESS_FORGE_SKIP_INSTALL_TEST:-0}" != "1" ]]; then
+  info "Test 15: install.sh / uninstall.sh symlink lifecycle"
+
+  # 既存 install を保護: 走行前に状態を記録
+  PRE_EXISTING=()
+  for skill in harness-profiler harness-generator harness-validator; do
+    if [[ -e "$HOME/.claude/skills/$skill" ]] && [[ ! -L "$HOME/.claude/skills/$skill" ]]; then
+      PRE_EXISTING+=("$skill")
+    fi
+  done
+
+  if [[ ${#PRE_EXISTING[@]} -gt 0 ]]; then
+    info "  ⚠ ~/.claude/skills/ に非 symlink ディレクトリ存在: ${PRE_EXISTING[*]} — Test 15 skip"
+  else
+    # 既存 symlink は退避 (テスト後復元)
+    BACKUP_DIR="$REPO_ROOT/tests/.install-backup"
+    rm -rf "$BACKUP_DIR" && mkdir -p "$BACKUP_DIR"
+    for skill in harness-profiler harness-generator harness-validator; do
+      if [[ -L "$HOME/.claude/skills/$skill" ]]; then
+        mv "$HOME/.claude/skills/$skill" "$BACKUP_DIR/$skill"
+      fi
+    done
+
+    # install 実行
+    bash "$REPO_ROOT/install.sh" >/dev/null
+
+    # 3 skill が symlink で存在するか
+    for skill in harness-profiler harness-generator harness-validator; do
+      if [[ ! -L "$HOME/.claude/skills/$skill" ]]; then
+        fail "install 後に ~/.claude/skills/$skill が symlink でない"
+      fi
+      # symlink の指す先が repo 内の skills/$skill と一致
+      RESOLVED=$(readlink "$HOME/.claude/skills/$skill")
+      EXPECTED="$REPO_ROOT/skills/$skill"
+      if [[ "$RESOLVED" != "$EXPECTED" ]]; then
+        fail "$skill の symlink 先が不正: $RESOLVED (期待: $EXPECTED)"
+      fi
+    done
+    info "  ✓ install.sh で 3 skill symlink 作成"
+
+    # 二重 install (idempotent)
+    bash "$REPO_ROOT/install.sh" >/dev/null
+    for skill in harness-profiler harness-generator harness-validator; do
+      if [[ ! -L "$HOME/.claude/skills/$skill" ]]; then
+        fail "再 install 後に $skill が symlink でない"
+      fi
+    done
+    info "  ✓ install.sh 二重実行で idempotent"
+
+    # uninstall 実行
+    bash "$REPO_ROOT/uninstall.sh" >/dev/null
+
+    for skill in harness-profiler harness-generator harness-validator; do
+      if [[ -e "$HOME/.claude/skills/$skill" ]]; then
+        fail "uninstall 後に ~/.claude/skills/$skill が残存"
+      fi
+    done
+    info "  ✓ uninstall.sh で 3 skill 削除"
+
+    # 復元
+    for skill in harness-profiler harness-generator harness-validator; do
+      if [[ -L "$BACKUP_DIR/$skill" ]]; then
+        mv "$BACKUP_DIR/$skill" "$HOME/.claude/skills/$skill"
+      fi
+    done
+    rm -rf "$BACKUP_DIR"
+    info "  ✓ 退避済み symlink を復元"
+  fi
+fi
+
+# ---- Test 16: plugin manifest (.claude-plugin/plugin.json) 妥当性 ----
+info "Test 16: .claude-plugin/plugin.json 存在 + 妥当性"
+PLUGIN_MANIFEST="$REPO_ROOT/.claude-plugin/plugin.json"
+if [[ ! -f "$PLUGIN_MANIFEST" ]]; then
+  fail ".claude-plugin/plugin.json が存在しない"
+fi
+if ! python3 -m json.tool "$PLUGIN_MANIFEST" >/dev/null; then
+  fail "plugin.json が無効 JSON"
+fi
+python3 -c "
+import json
+m = json.load(open('$PLUGIN_MANIFEST'))
+required = ['name', 'description', 'version']
+missing = [k for k in required if k not in m]
+assert not missing, f'plugin.json 必須フィールド欠落: {missing}'
+assert m['name'] == 'harness-forge', 'plugin name 不一致'
+" || fail "plugin.json の必須フィールドが不正"
+info "  ✓ plugin.json: name + description + version 揃う"
+
 # ---- Cleanup ----
 info ""
 info "========================================"
