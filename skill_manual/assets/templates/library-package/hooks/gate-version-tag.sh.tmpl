@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+# gate-version-tag.sh
+# =========================================================================
+# PreToolUse hook (matcher: Bash): git tag v<version> に対して CHANGELOG.md に
+# 該当エントリが存在することを要求する。
+#
+# 対象コマンド: git tag v<version> ...
+#
+# 動作:
+#   - tag 名から version を抽出 (v1.2.3 / 1.2.3 両方対応)
+#   - CHANGELOG.md にバージョンヘッダ "## [1.2.3]" or "## 1.2.3" を grep
+#   - 無ければ exit 2
+# =========================================================================
+
+set -euo pipefail
+
+INPUT_JSON=$(cat)
+
+COMMAND=$(echo "$INPUT_JSON" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    print(d.get('tool_input', {}).get('command', ''))
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+
+if [[ -z "$COMMAND" ]]; then
+  exit 0
+fi
+
+# git tag 以外は対象外
+if ! echo "$COMMAND" | grep -qE '\bgit\s+tag\b'; then
+  exit 0
+fi
+
+# tag 削除は通過
+if echo "$COMMAND" | grep -qE -- '\bgit\s+tag\s+-d\b'; then
+  exit 0
+fi
+
+# tag 名抽出 (v1.2.3 形式)
+VERSION=$(echo "$COMMAND" | grep -oE 'v?[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?' | head -1 || echo "")
+if [[ -z "$VERSION" ]]; then
+  cat >&2 <<EOF
+⚠ NOTICE: git tag コマンドですがバージョン番号が抽出できません: ${COMMAND:0:200}
+  semver 形式 (vX.Y.Z) のタグ作成を推奨。続行する場合は手動で確認してください。
+EOF
+  exit 0
+fi
+
+# v prefix を除いて検索
+VER_NUMERIC="${VERSION#v}"
+
+CHANGELOG=""
+for f in CHANGELOG.md CHANGELOG.txt CHANGELOG.rst CHANGELOG; do
+  if [[ -f "$f" ]]; then
+    CHANGELOG="$f"
+    break
+  fi
+done
+
+if [[ -z "$CHANGELOG" ]]; then
+  cat >&2 <<EOF
+ERROR: git tag $VERSION を作成しようとしていますが CHANGELOG ファイルが無い
+WHY:   公開ライブラリのリリース tag は変更履歴 (CHANGELOG) と対応している必要がある
+FIX:
+  1. CHANGELOG.md を作成 (harness-forge は雛形を生成しているはず)
+  2. バージョン $VERSION のエントリを追加 ('## [$VER_NUMERIC] - YYYY-MM-DD')
+  3. 再度 git tag $VERSION
+EOF
+  exit 2
+fi
+
+# CHANGELOG にバージョンエントリがあるか
+if grep -qE "^##\s*\[?$VER_NUMERIC\]?\b" "$CHANGELOG"; then
+  exit 0
+fi
+
+cat >&2 <<EOF
+ERROR: git tag $VERSION に対応する CHANGELOG エントリが $CHANGELOG に存在しない
+WHY:   release tag は CHANGELOG の対応エントリを持つべき (Keep a Changelog 規約)
+FIX:
+  1. $CHANGELOG を編集し、以下のような形式でエントリを追加:
+
+       ## [$VER_NUMERIC] - $(date +%Y-%m-%d)
+       ### Added / Changed / Deprecated / Removed / Fixed / Security
+       - <変更内容>
+
+  2. git add $CHANGELOG
+  3. git commit (CHANGELOG エントリ自体を release commit として記録)
+  4. 再度 git tag $VERSION
+
+参考: https://keepachangelog.com/
+EOF
+exit 2

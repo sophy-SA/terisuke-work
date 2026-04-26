@@ -1,18 +1,28 @@
 # アーキテクチャ
 
-## 3-skill family のデータフロー
+## 4-skill family のデータフロー
 
 ```
-┌─────────────────┐    profile.json     ┌───────────────────┐    scaffold files    ┌──────────────────┐
-│ harness-profiler│ ──────────────────► │ harness-generator │ ──────────────────►  │ harness-validator│
-│  (インタビュー)   │                    │  (実ファイル生成)  │                     │   (整合性検査)   │
-└─────────────────┘                     └───────────────────┘                      └──────────────────┘
-         ▲                                        │                                         │
-         │                                        ▼                                         ▼
-   ユーザー回答                              CLAUDE.md, .claude/*,                     harness-report.{json,md}
-                                          docs/harness.md, CI yml,
-                                          .harness-forge.state.json
+┌─────────────────┐  profile.json  ┌───────────────────┐  scaffold  ┌──────────────────┐
+│ harness-profiler│ ─────────────► │ harness-generator │ ─────────► │ harness-validator│
+│  (インタビュー)   │                │  (実ファイル生成)  │            │   (整合性検査)   │
+└─────────────────┘                └───────────────────┘            └──────────────────┘
+                                            │     ▲
+                                            ▼     │ (state.json + 現状ファイル)
+                                   ┌──────────────────────┐
+                                   │  harness-evolver     │
+                                   │  (drift 検出 + 反映)  │
+                                   └──────────────────────┘
+                                            │
+                                            ▼
+                                   .evolved-conflict.md
+                                   .harness-forge.evolution.log
 ```
+
+- **profiler** (1回目): プロジェクト属性をインタビュー → `profile.json`
+- **generator** (1回目): scaffold 一式生成 + `.harness-forge.state.json`
+- **validator** (随時): 整合性検査 → `harness-report.{json,md}`
+- **evolver** (archetype 更新後): 既存 harness と現 template の 3-way 比較 → drift 反映
 
 ## 設計原則
 
@@ -53,14 +63,14 @@
 
 6つの archetype を YAML で定義 (`assets/archetypes/*.yaml`):
 
-| Archetype | MVP | 特徴 |
+| Archetype | 状態 | 特徴 |
 |---|---|---|
 | `daily-utility` | ✅ | 個人用 CLI、最小 harness、PostToolUse format + pre-commit lint |
-| `library-package` | 計画 | 公開ライブラリ、semver / CHANGELOG / API 後方互換 / release workflow |
-| `production-saas` | 計画 | 商用 SaaS、Plan→Work→Review、全層品質ゲート |
-| `mobile-app` | 計画 | モバイル、xcodebuild / gradle / flutter、UI テストランナー、署名漏洩ブロック |
-| `ml-data` | 計画 | ML パイプライン、データ妥当性検証、大容量 artifact ブロック |
-| `infra-iac` | 計画 | IaC、plan/apply approval gate、drift detection、policy-as-code |
+| `library-package` | ✅ | 公開ライブラリ、CHANGELOG 強制 / version-tag gate / public API 編集警告 / api-compat-reviewer |
+| `production-saas` | ✅ | 商用 SaaS、3 subagent (code/security/test-author) + pre-pr-gate + linter 設定保護 + CI YAML |
+| `mobile-app` | ✅ | iOS/Android/RN/Flutter、署名 secret block / xcodebuild & gradle release gate / mobile-reviewer |
+| `ml-data` | ✅ | ML パイプライン、>50MB artifact block / ipynb output 警告 / notebook-reviewer + data-validator |
+| `infra-iac` | ✅ | IaC、terraform/k8s/helm apply gate / state file 保護 / infra-reviewer |
 
 Archetype YAML は `extends:` でコンポジション可能（library-package/production-saas/mobile-app/ml-data/infra-iac はすべて daily-utility を extends）。
 

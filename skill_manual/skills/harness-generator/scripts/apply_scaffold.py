@@ -158,6 +158,7 @@ def flatten_profile(profile: dict[str, Any]) -> dict[str, Any]:
         "PLAN_WORK_REVIEW": bool(workflow.get("plan_work_review", False)),
         "LONG_RUNNING_AGENTS": bool(workflow.get("long_running_agents", False)),
         "CI_EXTERNAL": bool(qg.get("ci_external", False)),
+        "CI_EXTERNAL_FALSE": not bool(qg.get("ci_external", False)),
         "HANDLES_SECRETS": bool(safety.get("handles_secrets", False)),
         "AI_SECOND_OPINION": bool(review.get("ai_second_opinion", False)),
         "REQUIRED_CHECKS_CSV": ",".join(required_checks),

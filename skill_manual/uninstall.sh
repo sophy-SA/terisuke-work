@@ -8,7 +8,7 @@
 set -euo pipefail
 
 SKILLS_DIR="$HOME/.claude/skills"
-SKILLS=("harness-profiler" "harness-generator" "harness-validator")
+SKILLS=("harness-profiler" "harness-generator" "harness-validator" "harness-evolver")
 
 REMOVED=()
 NOT_FOUND=()

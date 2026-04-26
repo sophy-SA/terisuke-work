@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# protect-state-files.sh
+# =========================================================================
+# PreToolUse hook (matcher: Edit|Write): IaC の state / 機密ファイルの編集をブロック
+#
+# 対象:
+#   - *.tfstate, *.tfstate.backup (Terraform state)
+#   - terraform.tfvars (秘密値含む可能性)
+#   - kubeconfig, .kube/config (cluster 認証情報)
+#   - ansible vault 化されていない vars/secrets/*
+#
+# 動作:
+#   - tfstate 系 → exit 2 (絶対編集禁止)
+#   - tfvars → 警告のみ exit 0 (空テンプレートはアリ)
+#   - kubeconfig → exit 2
+# =========================================================================
+
+set -euo pipefail
+
+INPUT_JSON=$(cat)
+
+FILE_PATH=$(echo "$INPUT_JSON" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    print(d.get('tool_input', {}).get('file_path', ''))
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+
+if [[ -z "$FILE_PATH" ]]; then
+  exit 0
+fi
+
+BASENAME=$(basename "$FILE_PATH")
+LOWER=$(echo "$BASENAME" | tr '[:upper:]' '[:lower:]')
+
+case "$LOWER" in
+  *.tfstate|*.tfstate.backup)
+    cat >&2 <<EOF
+ERROR: Terraform state ファイルの編集を検知 ($FILE_PATH)
+WHY:   tfstate は backend (S3/GCS) で管理される真実の状態。手動編集すると drift 不可逆、また secret 値を含むため repo に入ると漏洩
+FIX:
+  1. state を変更したい場合は 'terraform state mv' / 'terraform state rm' を使う
+  2. drift 修正は 'terraform import' で resource を取り込む
+  3. このファイルが repo にあるなら .gitignore に追加し、git rm --cached で履歴から外す
+EOF
+    exit 2
+    ;;
+  *.kubeconfig)
+    cat >&2 <<EOF
+ERROR: kubeconfig 編集を検知 ($FILE_PATH)
+WHY:   kubeconfig は cluster 認証情報を含み、漏洩で cluster 全体が乗っ取られる
+FIX:
+  1. 認証は 'aws eks update-kubeconfig' / 'gcloud container clusters get-credentials' で自動生成
+  2. context 切替は 'kubectl config use-context' で
+  3. このファイルが repo にあれば即座に削除、credentials を rotate
+EOF
+    exit 2
+    ;;
+esac
+
+# tfvars: 警告のみ
+case "$LOWER" in
+  *.tfvars|*.auto.tfvars)
+    cat >&2 <<EOF
+⚠ NOTICE: tfvars ファイル編集 ($FILE_PATH)
+  秘密値 (DB password / API key) を含む場合、commit しないこと。
+  推奨: secret は AWS Secrets Manager / GCP Secret Manager から terraform で読む。
+  最低限: このファイルが .gitignore に含まれているか確認してください。
+EOF
+    exit 0
+    ;;
+esac
+
+# .kube/config (パスベース判定)
+if [[ "$FILE_PATH" == *"/.kube/config" ]]; then
+  cat >&2 <<EOF
+ERROR: ~/.kube/config 相当の編集を検知 ($FILE_PATH)
+WHY:   cluster 認証情報。詳細は kubeconfig と同じリスク
+FIX:   'kubectl config' コマンドで管理する
+EOF
+  exit 2
+fi
+
+exit 0

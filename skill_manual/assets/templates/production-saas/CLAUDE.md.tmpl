@@ -1,0 +1,50 @@
+# {{PROJECT_NAME}}
+
+{{PROJECT_SUMMARY}}
+
+## SaaS 開発ワークフロー
+
+商用サービスとして稼働するため、**Plan → Work → Review** + **全層品質ゲート** が前提。
+
+### 起動時ルーチン
+
+1. `pwd` と `git log --oneline -10` で現状把握
+2. `gh pr list --state open` で進行中の PR 確認
+3. 既存の失敗テスト・型エラーを先に修正してから新機能
+4. 認証・決済まわりに触るなら `security-reviewer` への事前相談を推奨
+
+### 作業ルール
+
+- **Plan first**: 大きな変更は plan mode (Esc + p) で設計を固める
+- 一度に1機能。`feat/<description>` ブランチを切る
+- 変更後の流れ: format (auto) → lint (pre-commit) → typecheck/test (push 前) → CI → review
+- PR 作成前に `pre-pr-gate.sh` が typecheck + test + security-scan の通過を要求
+- 秘密情報は環境変数 / Secret Manager 経由のみ (commit は hook で block)
+
+### サブエージェント
+
+- `code-reviewer` — コード品質・パフォーマンス・テストカバレッジ
+- `security-reviewer` — 認証・認可・XSS/CSRF/SQLi・秘密情報
+- `test-author` — テスト追加 (TDD 推奨)
+
+## プロジェクト固有
+
+- **言語**: {{LANGUAGES_CSV}}
+- **意図1**: {{INTENT_1}}
+- **意図2**: {{INTENT_2}}
+- **意図3**: {{INTENT_3}}
+
+## 参照
+
+- レビュー観点: `.claude/subagents/{code,security,test-author}-reviewer.md`
+- PR 前ゲート: `.claude/hooks/pre-pr-gate.sh`
+- linter 設定保護: `.claude/hooks/protect-linter-config.sh`
+- 説明: `docs/harness.md`
+
+## 禁止事項
+
+- linter 設定ファイル (.eslintrc / biome.json / pyproject.toml / tsconfig.json) を黙って緩める
+- 秘密情報の commit
+- typecheck / test 失敗のままで PR 作成
+- `--no-verify` でのコミット
+- `gh pr create` を pre-pr-gate を bypass して実行

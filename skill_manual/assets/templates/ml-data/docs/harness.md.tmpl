@@ -1,0 +1,80 @@
+# このプロジェクトの Claude Code ハーネス (ml-data)
+
+**生成元**: harness-forge (archetype: ml-data)
+
+## 何が scaffold されたか
+
+| ファイル | 役割 |
+|---|---|
+| `CLAUDE.md` | ML/Data ワークフロー (再現性 + データ取り回し) |
+| `.claude/subagents/notebook-reviewer.md` | Jupyter Notebook 構造レビュアー |
+| `.claude/subagents/data-validator.md` | データ品質 (型/分布/欠損/リーク) レビュアー |
+| `.claude/subagents/reviewer.md` | 汎用レビュアー (継承) |
+| `.claude/hooks/block-large-artifact.sh` | 50MB 超のファイル書き込みを block (DVC/lfs 案内) |
+| `.claude/hooks/check-notebook-output.sh` | .ipynb の output 残存に警告 |
+| `.claude/hooks/post-edit-format.sh` | 自動整形 (継承) |
+| `.claude/hooks/pre-commit-lint.sh` | lint ゲート (継承) |
+| `.gitattributes` | ipynb diff フィルタ + LFS 例 |
+| `.claude/settings.json` | jupyter / dvc / mlflow / pytest 等の許可 |
+
+## なぜこの構成か
+
+### ML/Data 固有のリスク
+
+1. **大容量 artifact の commit**: model.safetensors / dataset.parquet が repo に入ると push/clone 不能になる
+2. **再現性なき実験**: random seed 未固定 / env version 不明で結果が再現しない
+3. **データリーク**: train/val 分割の不適切で過大評価
+4. **notebook output の汚染**: PR diff が画像 binary で肥大化
+
+これらに対する scaffold:
+- `block-large-artifact` で commit 前ガード
+- CLAUDE.md で seed 固定を明記
+- `data-validator` でリーク検知支援
+- `check-notebook-output` で output 警告
+
+### 採用しなかった要素 (意図的)
+
+- **特定 ML framework (pytorch / sklearn / lightgbm) のテンプレ**: 用途が広すぎて archetype 共通化困難。CLAUDE.md で言及のみ
+- **DVC / MLflow の自動 init**: ユーザーが選ぶべき (DVC 強制 vs git-lfs)
+- **GPU resource 管理**: 環境依存が大きい (CUDA / Metal / TPU)
+- **AutoML 系の組み込み**: scope 外
+
+## 推奨ワークフロー
+
+```bash
+# 1. データロード + EDA notebook
+jupyter lab notebooks/eda.ipynb
+# data-validator に "@data-validator (agent) このロード処理の schema を見て"
+
+# 2. モデル実装 (src/ 配下に Python module で)
+$EDITOR src/model.py
+
+# 3. テスト (再現性: pytest-randomly + seed 固定)
+pytest tests/ -q
+
+# 4. notebook-reviewer で notebook 構造確認
+# Claude チャットで:
+#   "@notebook-reviewer (agent) notebooks/eda.ipynb をレビュー"
+
+# 5. commit 前に notebook output strip
+nbstripout notebooks/*.ipynb
+
+# 6. 大きなデータは DVC
+dvc add data/raw/big.parquet
+git add data/raw/big.parquet.dvc
+
+# 7. commit (block-large-artifact が走る)
+git add . && git commit -m "feat: baseline LSTM model"
+```
+
+## 緊急 bypass
+
+- `BLOCK_LARGE_ARTIFACT_MB=200` で閾値を一時拡張 (実体は repo に入るので注意)
+
+## 参考資料
+
+- [DVC](https://dvc.org/) — Data Version Control
+- [Great Expectations](https://greatexpectations.io/) — Data quality
+- [pandera](https://pandera.readthedocs.io/) — Schema validation
+- Anthropic: [Effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)
+- Sakasegawa: [Harness Engineering 2026](https://nyosegawa.com/en/posts/harness-engineering-best-practices-2026/) (ML pipeline 6層)

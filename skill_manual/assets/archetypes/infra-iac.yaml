@@ -1,26 +1,74 @@
 # infra-iac archetype: Terraform / Ansible / K8s manifests / Helm chart
 #
-# MVP スコープ: stub のみ。Phase 8d で template を実装。
-# 設計方針 (将来):
-#   - daily-utility extends
-#   - plan → review → apply を machine-enforced
-#   - terraform apply / kubectl apply / helm upgrade を PreToolUse で approval gate
-#   - terraform plan の差分 summary を PR 説明に自動挿入
-#   - drift detection scheduled job (scheduled remote agent 連携)
-#   - secret scan が daily-utility より厳格 (IaC ファイルは tfvars / .env / kustomize secrets が点在)
-#   - policy as code (OPA / conftest) チェック
+# 設計方針:
+#   - daily-utility extends (基本 hook を継承)
+#   - infra-reviewer subagent (drift / blast radius / policy 観点)
+#   - terraform apply / kubectl apply / helm upgrade を PreToolUse Bash で gate
+#   - tfstate (秘密情報を含む) の編集・commit をブロック
+#   - dry-run / plan / template (read-only パターン) は通過
 
 name: infra-iac
-status: planned
+status: complete
 description: |
-  Terraform / Ansible / K8s manifests / Helm chart など Infrastructure as Code プロジェクト向け。
-  plan/apply の approval gate、drift detection、policy-as-code チェックを scaffold する。
-  MVP では未実装。Phase 8d で実装予定。
+  Terraform / Ansible / K8s manifests / Helm chart など Infrastructure as Code 向け。
+  apply 系コマンドを gate し、state ファイル保護、policy-as-code チェックを scaffold する。
 
 extends: daily-utility
 
-templates: []
+templates:
+  - src: infra-iac/CLAUDE.md.tmpl
+    dest: CLAUDE.md
+    merge: skip_if_exists
+
+  - src: infra-iac/subagents/infra-reviewer.md.tmpl
+    dest: .claude/subagents/infra-reviewer.md
+    merge: overwrite
+
+  # Terraform apply / destroy gate
+  - src: infra-iac/hooks/gate-terraform-apply.sh.tmpl
+    dest: .claude/hooks/gate-terraform-apply.sh
+    mode: "0755"
+    merge: overwrite
+
+  # kubectl apply gate
+  - src: infra-iac/hooks/gate-k8s-apply.sh.tmpl
+    dest: .claude/hooks/gate-k8s-apply.sh
+    mode: "0755"
+    merge: overwrite
+
+  # helm install/upgrade gate
+  - src: infra-iac/hooks/gate-helm-upgrade.sh.tmpl
+    dest: .claude/hooks/gate-helm-upgrade.sh
+    mode: "0755"
+    merge: overwrite
+
+  # tfstate / kubeconfig 等の機密ファイル保護
+  - src: infra-iac/hooks/protect-state-files.sh.tmpl
+    dest: .claude/hooks/protect-state-files.sh
+    mode: "0755"
+    merge: overwrite
+
+  - src: infra-iac/settings.patch.json.tmpl
+    dest: .claude/settings.json
+    merge: json-deep
+
+  - src: infra-iac/docs/harness.md.tmpl
+    dest: docs/harness.md
+    merge: skip_if_exists
+
 conditional_templates: []
-variables: {}
-subagents: []
-hooks: {}
+
+subagents:
+  - reviewer
+  - infra-reviewer
+
+hooks:
+  PreToolUse:
+    - matcher: "Bash"
+      script: ".claude/hooks/gate-terraform-apply.sh"
+    - matcher: "Bash"
+      script: ".claude/hooks/gate-k8s-apply.sh"
+    - matcher: "Bash"
+      script: ".claude/hooks/gate-helm-upgrade.sh"
+    - matcher: "Edit|Write"
+      script: ".claude/hooks/protect-state-files.sh"

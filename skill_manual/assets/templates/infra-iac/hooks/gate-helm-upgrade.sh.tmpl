@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# gate-helm-upgrade.sh
+# =========================================================================
+# PreToolUse hook (matcher: Bash): helm の破壊的サブコマンドを gate する
+#
+# 動作:
+#   - helm install / upgrade / uninstall / rollback → block
+#   - helm template / lint / diff → 通過
+# =========================================================================
+
+set -euo pipefail
+
+INPUT_JSON=$(cat)
+
+COMMAND=$(echo "$INPUT_JSON" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    print(d.get('tool_input', {}).get('command', ''))
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+
+if [[ -z "$COMMAND" ]]; then
+  exit 0
+fi
+
+# helm 以外は対象外
+if ! echo "$COMMAND" | grep -qE '\bhelm\b'; then
+  exit 0
+fi
+
+# 破壊系
+DESTRUCTIVE_SUB=""
+for sub in install upgrade uninstall delete rollback; do
+  if echo "$COMMAND" | grep -qE "\bhelm\s+$sub\b"; then
+    DESTRUCTIVE_SUB="$sub"
+    break
+  fi
+done
+
+if [[ -z "$DESTRUCTIVE_SUB" ]]; then
+  exit 0
+fi
+
+cat >&2 <<EOF
+ERROR: helm $DESTRUCTIVE_SUB を local から実行しようとしています
+WHY:   helm の操作は対象 cluster を即時変更する。release リビジョンが変わり rollback の context が失われる
+FIX:
+  1. 'helm template ... | kubectl diff -f -' で差分プレビュー
+  2. 'helm diff upgrade ...' (helm-diff plugin) で詳細差分
+  3. CI 経由 (ArgoCD / Flux / GitHub Actions) で実行 (推奨)
+  4. local 実行する場合は context と namespace を必ず明示
+
+コマンド: ${COMMAND:0:200}
+EOF
+exit 2

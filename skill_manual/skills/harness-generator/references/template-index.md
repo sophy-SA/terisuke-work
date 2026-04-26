@@ -21,28 +21,56 @@ harness-generator が archetype ごとに適用する template 一覧。
 | `HANDLES_SECRETS` | `_shared/hooks/block-secret-commit.sh.tmpl` | `.claude/hooks/block-secret-commit.sh` | 0755 |
 | `DESTRUCTIVE_OPS_CONTAINS_RM_RF` | `_shared/hooks/block-rm-rf.sh.tmpl` | `.claude/hooks/block-rm-rf.sh` | 0755 |
 
-## library-package (計画中)
+## library-package (MVP ✅)
 
-status: planned (Phase 8c)
-
-`extends: daily-utility` — 以下を追加:
-
-- `library-package/subagents/api-compat-reviewer.md.tmpl`
-- `library-package/hooks/check-semver.sh.tmpl`
-- `library-package/hooks/check-changelog.sh.tmpl`
-- `library-package/validation/release-workflow.yml.tmpl`
-
-## production-saas (計画中)
-
-status: planned (Phase 8 後半)
+status: complete (Phase 8c 実装済み)
 
 `extends: daily-utility` — 以下を追加:
 
-- `production-saas/subagents/code-reviewer.md.tmpl`
-- `production-saas/subagents/security-reviewer.md.tmpl`
-- `production-saas/subagents/test-author.md.tmpl`
-- `production-saas/hooks/pre-pr-gate.sh.tmpl`
-- `production-saas/validation/ci.yml.tmpl` (conditional: !ci_external)
+| src | dest | mode | merge |
+|---|---|---|---|
+| `library-package/CLAUDE.md.tmpl` | `CLAUDE.md` | - | `skip_if_exists` (親を上書き) |
+| `library-package/CHANGELOG.md.tmpl` | `CHANGELOG.md` | - | `skip_if_exists` |
+| `library-package/subagents/api-compat-reviewer.md.tmpl` | `.claude/subagents/api-compat-reviewer.md` | - | `overwrite` |
+| `library-package/hooks/protect-public-api.sh.tmpl` | `.claude/hooks/protect-public-api.sh` | 0755 | `overwrite` |
+| `library-package/hooks/check-changelog.sh.tmpl` | `.claude/hooks/check-changelog.sh` | 0755 | `overwrite` |
+| `library-package/hooks/gate-version-tag.sh.tmpl` | `.claude/hooks/gate-version-tag.sh` | 0755 | `overwrite` |
+| `library-package/settings.patch.json.tmpl` | `.claude/settings.json` | - | `json-deep` |
+| `library-package/docs/harness.md.tmpl` | `docs/harness.md` | - | `skip_if_exists` |
+
+### 主要 hook
+
+- **protect-public-api** (PreToolUse Edit|Write): 公開 API ファイル (src/index.ts, __init__.py, lib.rs 等) 編集時に api-compat-reviewer 呼び出し勧告
+- **check-changelog** (PreToolUse Bash): `git commit` 時に src/ 変更ありなら CHANGELOG.md staged 必須
+- **gate-version-tag** (PreToolUse Bash): `git tag v*` 時に CHANGELOG.md に該当バージョンエントリ必須
+
+## production-saas (MVP ✅)
+
+status: complete (Phase 8e 実装済み)
+
+`extends: daily-utility` — 以下を追加:
+
+| src | dest | mode | merge |
+|---|---|---|---|
+| `production-saas/CLAUDE.md.tmpl` | `CLAUDE.md` | - | `skip_if_exists` |
+| `production-saas/subagents/code-reviewer.md.tmpl` | `.claude/subagents/code-reviewer.md` | - | `overwrite` |
+| `production-saas/subagents/security-reviewer.md.tmpl` | `.claude/subagents/security-reviewer.md` | - | `overwrite` |
+| `production-saas/subagents/test-author.md.tmpl` | `.claude/subagents/test-author.md` | - | `overwrite` |
+| `production-saas/hooks/pre-pr-gate.sh.tmpl` | `.claude/hooks/pre-pr-gate.sh` | 0755 | `overwrite` |
+| `production-saas/hooks/protect-linter-config.sh.tmpl` | `.claude/hooks/protect-linter-config.sh` | 0755 | `overwrite` |
+| `production-saas/settings.patch.json.tmpl` | `.claude/settings.json` | - | `json-deep` |
+| `production-saas/docs/harness.md.tmpl` | `docs/harness.md` | - | `skip_if_exists` |
+
+### conditional
+
+| condition | src | dest |
+|---|---|---|
+| `CI_EXTERNAL_FALSE` | `production-saas/validation/ci.yml.tmpl` | `.github/workflows/ci.yml` |
+
+### 主要 hook
+
+- **pre-pr-gate**: `gh pr create` 検知 → lint / typecheck / test ローカル実行 → 失敗で block
+- **protect-linter-config**: `.eslintrc` / `biome.json` / `tsconfig.json` / `.prettierrc` 等の編集を block (Sakasegawa の linter config 保護)
 
 ## mobile-app (MVP ✅)
 
@@ -70,28 +98,46 @@ status: complete (Phase 8b 実装済み)
 
 mobile-app archetype 採用時、`project.mobile_platforms[]` (ios / android / react-native / flutter) で対応プラットフォームを指定。空の場合は汎用テンプレートのみ (platform-specific hook は配置されない)。
 
-## ml-data (計画中)
+## ml-data (MVP ✅)
 
-status: planned (Phase 8 後半)
-
-`extends: daily-utility` — 以下を追加:
-
-- `ml-data/subagents/notebook-reviewer.md.tmpl`
-- `ml-data/subagents/data-validator.md.tmpl`
-- `ml-data/hooks/block-large-artifact.sh.tmpl`
-- `ml-data/.gitattributes.tmpl`
-
-## infra-iac (計画中)
-
-status: planned (Phase 8d)
+status: complete
 
 `extends: daily-utility` — 以下を追加:
 
-- `infra-iac/subagents/infra-reviewer.md.tmpl`
-- `infra-iac/hooks/gate-terraform-apply.sh.tmpl`
-- `infra-iac/hooks/gate-k8s-apply.sh.tmpl`
-- `infra-iac/hooks/gate-helm-upgrade.sh.tmpl`
-- `infra-iac/validation/policy-as-code.sh.tmpl` (OPA / conftest)
+- `ml-data/CLAUDE.md.tmpl` — 再現性 / DVC / nbstripout 案内 (overrides 親の CLAUDE.md)
+- `ml-data/subagents/notebook-reviewer.md.tmpl` — ipynb 構造・再現性レビュアー
+- `ml-data/subagents/data-validator.md.tmpl` — schema / 欠損率 / target leak 検査
+- `ml-data/hooks/block-large-artifact.sh.tmpl` — >50MB の model/dataset を block (DVC/lfs 案内)
+- `ml-data/hooks/check-notebook-output.sh.tmpl` — .ipynb の output 残存に警告
+- `ml-data/gitattributes.tmpl` — ipynb diff filter + LFS パターン例
+- `ml-data/settings.patch.json.tmpl` — jupyter / dvc / mlflow / pytest 等の許可 + hook 登録
+- `ml-data/docs/harness.md.tmpl` — ml-data 構成説明
+
+`BLOCK_LARGE_ARTIFACT_MB` 環境変数で 50MB 閾値を上書き可能。
+
+## infra-iac (MVP ✅)
+
+status: complete (Phase 8d 実装済み)
+
+`extends: daily-utility` — 以下を追加:
+
+| src | dest | mode | merge |
+|---|---|---|---|
+| `infra-iac/CLAUDE.md.tmpl` | `CLAUDE.md` | - | `skip_if_exists` |
+| `infra-iac/subagents/infra-reviewer.md.tmpl` | `.claude/subagents/infra-reviewer.md` | - | `overwrite` |
+| `infra-iac/hooks/gate-terraform-apply.sh.tmpl` | `.claude/hooks/gate-terraform-apply.sh` | 0755 | `overwrite` |
+| `infra-iac/hooks/gate-k8s-apply.sh.tmpl` | `.claude/hooks/gate-k8s-apply.sh` | 0755 | `overwrite` |
+| `infra-iac/hooks/gate-helm-upgrade.sh.tmpl` | `.claude/hooks/gate-helm-upgrade.sh` | 0755 | `overwrite` |
+| `infra-iac/hooks/protect-state-files.sh.tmpl` | `.claude/hooks/protect-state-files.sh` | 0755 | `overwrite` |
+| `infra-iac/settings.patch.json.tmpl` | `.claude/settings.json` | - | `json-deep` |
+| `infra-iac/docs/harness.md.tmpl` | `docs/harness.md` | - | `skip_if_exists` |
+
+### 主要 hook
+
+- **gate-terraform-apply**: `terraform apply -auto-approve` / `terraform destroy` を block、対話的 apply は警告
+- **gate-k8s-apply**: `kubectl apply/delete/replace/scale/rollout/patch` を block、`--dry-run` / `diff` / `get` は通過
+- **gate-helm-upgrade**: `helm install/upgrade/uninstall/rollback` を block、`template` / `diff` / `lint` は通過
+- **protect-state-files**: `*.tfstate` / `kubeconfig` 編集を block、`*.tfvars` に警告
 
 ## design_focus flag (旧 design-heavy)
 

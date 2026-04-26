@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# check-changelog.sh
+# =========================================================================
+# PreToolUse hook (matcher: Bash): src/ 編集を含む git commit で CHANGELOG.md
+# の同時更新を要求する。
+#
+# 対象コマンド: git commit ...
+#
+# 動作:
+#   - staged 変更に src/ や lib/ 配下のコード変更があるか確認
+#   - CHANGELOG.md が staged にあるか確認
+#   - src 編集あり AND CHANGELOG なし → exit 2 (ブロック)
+#   - それ以外 → exit 0 (通過)
+# =========================================================================
+
+set -euo pipefail
+
+INPUT_JSON=$(cat)
+
+COMMAND=$(echo "$INPUT_JSON" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    print(d.get('tool_input', {}).get('command', ''))
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+
+if [[ -z "$COMMAND" ]]; then
+  exit 0
+fi
+
+# git commit 系のみ対象 (amend/fixup も含む)
+if ! echo "$COMMAND" | grep -qE '\bgit\s+commit\b'; then
+  exit 0
+fi
+
+# --no-verify は禁止 (CLAUDE.md にも書いてある)
+if echo "$COMMAND" | grep -qE -- '--no-verify'; then
+  cat >&2 <<EOF
+ERROR: git commit --no-verify は禁止 (CLAUDE.md 禁止事項)
+WHY:   pre-commit hook を bypass すると lint や CHANGELOG チェックが skip される
+FIX:   hook 失敗の根本原因を直してから再 commit、または手動で hook の指摘に対応
+EOF
+  exit 2
+fi
+
+# staged ファイル取得
+STAGED=$(git diff --cached --name-only --diff-filter=AMR 2>/dev/null || echo "")
+if [[ -z "$STAGED" ]]; then
+  exit 0
+fi
+
+# src/ または lib/ 配下のコード変更があるか
+SRC_CHANGED=""
+while IFS= read -r f; do
+  case "$f" in
+    src/*|lib/*)
+      # テストや snapshot は除外
+      case "$f" in
+        */tests/*|*/__tests__/*|*/test/*|*.test.*|*.spec.*|*/__snapshots__/*) ;;
+        *)
+          SRC_CHANGED="yes"
+          break
+          ;;
+      esac
+      ;;
+  esac
+done <<< "$STAGED"
+
+if [[ -z "$SRC_CHANGED" ]]; then
+  exit 0
+fi
+
+# CHANGELOG.md が staged にあるか
+if echo "$STAGED" | grep -qE '^CHANGELOG(\.md|\.txt|\.rst)?$'; then
+  exit 0
+fi
+
+cat >&2 <<EOF
+ERROR: src/ または lib/ への変更がありますが CHANGELOG.md が更新されていません
+WHY:   公開ライブラリでは利用者が変更を追跡できるよう CHANGELOG が必須 (Keep a Changelog 規約)
+FIX:
+  1. CHANGELOG.md に変更内容を記載 (Breaking / Added / Changed / Deprecated / Removed / Fixed / Security)
+  2. git add CHANGELOG.md
+  3. 再度 commit
+  - 雛形は CHANGELOG.md に既に scaffold されています
+  - 内部リファクタで利用者影響なしの場合も「Internal: ...」として記録推奨
+
+参考: https://keepachangelog.com/
+EOF
+exit 2

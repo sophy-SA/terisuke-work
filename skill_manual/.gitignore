@@ -28,6 +28,7 @@ yarn-error.log*
 
 # Test output / sandboxes
 tests/sandbox/
+tests/sandbox-*/
 tests/.pytest_cache/
 .coverage
 htmlcov/

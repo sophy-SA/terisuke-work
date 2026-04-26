@@ -1,0 +1,19 @@
+{
+  "name": "harness-forge",
+  "description": "Claude Code のハーネス環境 (CLAUDE.md / subagents / hooks / settings) を 6 archetype × profile.json から自動 scaffold する 3-skill family",
+  "version": "0.1.0",
+  "author": {
+    "name": "harness-forge contributors"
+  },
+  "homepage": "https://github.com/sophy-SA/harness-forge",
+  "license": "MIT",
+  "keywords": [
+    "harness",
+    "scaffold",
+    "claude-code",
+    "skills",
+    "archetype",
+    "subagents",
+    "hooks"
+  ]
+}

@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# gate-k8s-apply.sh
+# =========================================================================
+# PreToolUse hook (matcher: Bash): kubectl の破壊的サブコマンドを gate する
+#
+# 動作:
+#   - kubectl apply (--dry-run なし) → block
+#   - kubectl delete (--dry-run なし) → block
+#   - kubectl replace → block
+#   - kubectl diff / get / describe / logs → 通過
+# =========================================================================
+
+set -euo pipefail
+
+INPUT_JSON=$(cat)
+
+COMMAND=$(echo "$INPUT_JSON" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    print(d.get('tool_input', {}).get('command', ''))
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+
+if [[ -z "$COMMAND" ]]; then
+  exit 0
+fi
+
+# kubectl 以外は対象外
+if ! echo "$COMMAND" | grep -qE '\bkubectl\b'; then
+  exit 0
+fi
+
+# dry-run は通過 (確認用)
+if echo "$COMMAND" | grep -qE -- '--dry-run'; then
+  exit 0
+fi
+
+# 破壊系サブコマンド
+DESTRUCTIVE=""
+SUBCOMMAND=""
+if echo "$COMMAND" | grep -qE '\bkubectl\s+apply\b'; then
+  DESTRUCTIVE="yes"
+  SUBCOMMAND="apply"
+elif echo "$COMMAND" | grep -qE '\bkubectl\s+delete\b'; then
+  DESTRUCTIVE="yes"
+  SUBCOMMAND="delete"
+elif echo "$COMMAND" | grep -qE '\bkubectl\s+replace\b'; then
+  DESTRUCTIVE="yes"
+  SUBCOMMAND="replace"
+elif echo "$COMMAND" | grep -qE '\bkubectl\s+(scale|rollout)\b'; then
+  DESTRUCTIVE="yes"
+  SUBCOMMAND="scale/rollout"
+elif echo "$COMMAND" | grep -qE '\bkubectl\s+patch\b'; then
+  DESTRUCTIVE="yes"
+  SUBCOMMAND="patch"
+fi
+
+if [[ -z "$DESTRUCTIVE" ]]; then
+  exit 0
+fi
+
+cat >&2 <<EOF
+ERROR: kubectl $SUBCOMMAND を local から実行しようとしています
+WHY:   kubectl の context は環境ごとに切り替わり、local 設定で誤って prod cluster を操作する事故が頻発する
+FIX:
+  1. 'kubectl diff -f ...' で差分確認 (dry-run 同様、cluster には影響しない)
+  2. CI 経由 (GitHub Actions / ArgoCD / Flux) で apply (推奨)
+  3. local で実行する場合:
+     a. 'kubectl config current-context' で context を確認
+     b. '--context' を明示
+     c. '--dry-run=server' で server 側 validation
+     d. 上記 OK なら手動で hook を一時 bypass
+
+コマンド: ${COMMAND:0:200}
+EOF
+exit 2

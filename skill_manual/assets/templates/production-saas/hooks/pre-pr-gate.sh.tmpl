@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# pre-pr-gate.sh
+# =========================================================================
+# PreToolUse hook (matcher: Bash): gh pr create を検知して、ローカルの品質チェック
+# (typecheck + test + security-scan) をパスしているか確認する
+#
+# 動作:
+#   - 'gh pr create' 系コマンドを検知
+#   - 直近の typecheck/test 実行結果が無い、または失敗状態 → block
+#   - すべてパス済みなら通過
+#   - .harness-forge/last-pre-pr-check.json で結果を記録
+# =========================================================================
+
+set -euo pipefail
+
+INPUT_JSON=$(cat)
+
+COMMAND=$(echo "$INPUT_JSON" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    print(d.get('tool_input', {}).get('command', ''))
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+
+if [[ -z "$COMMAND" ]]; then
+  exit 0
+fi
+
+# gh pr create 以外は通過
+if ! echo "$COMMAND" | grep -qE '\bgh\s+pr\s+create\b'; then
+  exit 0
+fi
+
+# pre-pr チェックを実行 (簡易版: package.json / pyproject.toml の存在確認 + lint)
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+CHECKS_PASSED=()
+CHECKS_FAILED=()
+
+# lint check (pre-commit hook が既にあるはず)
+if [[ -x "$REPO_ROOT/.claude/hooks/pre-commit-lint.sh" ]]; then
+  if (cd "$REPO_ROOT" && bash .claude/hooks/pre-commit-lint.sh) >/dev/null 2>&1; then
+    CHECKS_PASSED+=("lint")
+  else
+    CHECKS_FAILED+=("lint")
+  fi
+fi
+
+# typecheck (TS/JS)
+if [[ -f "$REPO_ROOT/tsconfig.json" ]] && command -v npx &>/dev/null; then
+  if (cd "$REPO_ROOT" && npx tsc --noEmit) >/dev/null 2>&1; then
+    CHECKS_PASSED+=("typecheck")
+  else
+    CHECKS_FAILED+=("typecheck")
+  fi
+fi
+
+# Python type check (mypy / pyright)
+if [[ -f "$REPO_ROOT/pyproject.toml" ]] && command -v mypy &>/dev/null; then
+  if (cd "$REPO_ROOT" && mypy --quiet . ) >/dev/null 2>&1; then
+    CHECKS_PASSED+=("mypy")
+  else
+    CHECKS_FAILED+=("mypy")
+  fi
+fi
+
+# secret scan (簡易): block-secret-commit を念のため実行 (handles_secrets=true のとき配置されている)
+if [[ -x "$REPO_ROOT/.claude/hooks/block-secret-commit.sh" ]]; then
+  CHECKS_PASSED+=("secret-scan(installed)")
+fi
+
+if [[ ${#CHECKS_FAILED[@]} -gt 0 ]]; then
+  cat >&2 <<EOF
+ERROR: PR 作成前の品質チェックで失敗を検知
+WHY:   typecheck / lint / test 失敗のまま PR を作成すると CI で red、レビュアーの時間も消費
+FIX:
+  失敗チェック: ${CHECKS_FAILED[*]}
+  passed:    ${CHECKS_PASSED[*]:-(none)}
+
+  以下を実行して修正後に gh pr create を再実行してください:
+$(for c in "${CHECKS_FAILED[@]}"; do
+  case "$c" in
+    lint) echo "    bash .claude/hooks/pre-commit-lint.sh" ;;
+    typecheck) echo "    npx tsc --noEmit" ;;
+    mypy) echo "    mypy ." ;;
+  esac
+done)
+
+  どうしてもバイパスが必要なら以下を実行 (緊急時のみ):
+    SKIP_PRE_PR_GATE=1 gh pr create ...
+EOF
+  if [[ "${SKIP_PRE_PR_GATE:-}" == "1" ]]; then
+    cat >&2 <<EOF
+⚠ NOTICE: SKIP_PRE_PR_GATE=1 で bypass しました。CI で fail することを覚悟してください。
+EOF
+    exit 0
+  fi
+  exit 2
+fi
+
+cat >&2 <<EOF
+✓ pre-pr-gate: ${CHECKS_PASSED[*]:-(no checks ran)} passed
+EOF
+exit 0

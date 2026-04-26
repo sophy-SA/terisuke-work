@@ -1,0 +1,75 @@
+# このプロジェクトの Claude Code ハーネス (library-package)
+
+**生成元**: harness-forge (archetype: library-package)
+**主要言語**: {{LANGUAGES_CSV}}
+
+## 何が scaffold されたか
+
+daily-utility archetype の基本セットに加えて、ライブラリ固有のファイルが配置されました:
+
+| ファイル | 役割 |
+|---|---|
+| `CLAUDE.md` | ライブラリ開発ワークフロー (semver / CHANGELOG 規律) |
+| `CHANGELOG.md` | Keep a Changelog 形式の雛形 (既存があれば skip) |
+| `.claude/subagents/api-compat-reviewer.md` | 公開 API 後方互換性レビュアー |
+| `.claude/subagents/reviewer.md` | 汎用コードレビュアー (継承) |
+| `.claude/hooks/protect-public-api.sh` | 公開 API ファイル編集に警告 (PreToolUse) |
+| `.claude/hooks/check-changelog.sh` | src/ 編集 commit で CHANGELOG 必須 (PreToolUse Bash) |
+| `.claude/hooks/gate-version-tag.sh` | git tag v* に対応 CHANGELOG エントリ必須 (PreToolUse Bash) |
+| `.claude/hooks/post-edit-format.sh` | 自動整形 (継承) |
+| `.claude/hooks/pre-commit-lint.sh` | lint ゲート (継承) |
+
+## なぜこの構成か
+
+### ライブラリ固有のリスク
+
+公開ライブラリ (npm/PyPI/crates 等) は利用者を持ちます:
+
+1. **公開 API の不用意な変更** が利用者を破壊する
+2. **CHANGELOG なきリリース** で利用者が migration できない
+3. **semver 規律違反** (breaking なのに patch bump) で `^x.y.z` 指定の利用者が壊れる
+
+これらを **機械的に強制** する3つの hook が中核です:
+- 公開 API 編集に警告 (forget 防止)
+- CHANGELOG なき commit を block
+- CHANGELOG エントリなき git tag を block
+
+### 採用しなかった要素 (意図的)
+
+- **公開 API 自動 diff (TypeScript の api-extractor 等)**: 言語別 tooling の維持コストが高いため、レビューは subagent に任せる
+- **publish 自動化**: `npm publish` / `cargo publish` の権限管理は scaffold 範囲外。CI の secrets で対応する想定
+- **MAJOR バージョン bump 自動判定**: false positive が多いため、人間 + api-compat-reviewer が判定
+
+## 使い方
+
+### 新機能を追加するとき
+
+```bash
+# 1. ブランチ作成
+git checkout -b feat/new-thing
+
+# 2. 実装 (src/ 配下を編集)
+# 3. 公開 API なら api-compat-reviewer に相談
+#    "@api-compat-reviewer (agent) この差分の semver 影響を判定して"
+
+# 4. CHANGELOG.md の Unreleased セクションに追記
+# 5. git add CHANGELOG.md src/...
+# 6. git commit -m "feat: ..."  ← CHANGELOG が staged になければ block される
+```
+
+### リリースするとき
+
+```bash
+# 1. CHANGELOG.md の Unreleased を [x.y.z] - YYYY-MM-DD にリネーム
+# 2. version bump (package.json / pyproject.toml / Cargo.toml)
+# 3. git commit -am "chore(release): vx.y.z"
+# 4. git tag vx.y.z   ← CHANGELOG エントリが無ければ block される
+# 5. git push origin main --tags
+# 6. CI 経由で publish (推奨)
+```
+
+## 参考資料
+
+- [Keep a Changelog](https://keepachangelog.com/)
+- [Semantic Versioning](https://semver.org/)
+- Anthropic: [Effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)

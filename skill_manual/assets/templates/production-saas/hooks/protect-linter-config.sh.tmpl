@@ -1,0 +1,98 @@
+#!/usr/bin/env bash
+# protect-linter-config.sh
+# =========================================================================
+# PreToolUse hook (matcher: Edit|Write): linter / formatter / typechecker
+# の設定ファイル編集を検知してブロックする (Sakasegawa の推奨実装)
+#
+# WHY:
+#   エージェントが lint エラーを「ルールを緩めて消す」ことを構造的に禁止する
+#
+# 対象:
+#   - .eslintrc{,.json,.js,.cjs,.yaml,.yml}, eslint.config.{js,ts,mjs,cjs}
+#   - biome.json, .biome.json
+#   - .prettierrc{,.json,.js,.yaml}, prettier.config.{js,ts}
+#   - tsconfig{,.*}.json
+#   - pyproject.toml の [tool.ruff], [tool.mypy], [tool.pytest] セクションは特に注意
+#   - .ruff.toml, ruff.toml
+#   - .stylelintrc*, stylelint.config.*
+#   - .editorconfig
+# =========================================================================
+
+set -euo pipefail
+
+INPUT_JSON=$(cat)
+
+FILE_PATH=$(echo "$INPUT_JSON" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    print(d.get('tool_input', {}).get('file_path', ''))
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+
+if [[ -z "$FILE_PATH" ]]; then
+  exit 0
+fi
+
+BASENAME=$(basename "$FILE_PATH")
+LOWER=$(echo "$BASENAME" | tr '[:upper:]' '[:lower:]')
+
+PROTECTED_NAME=""
+case "$LOWER" in
+  .eslintrc|.eslintrc.json|.eslintrc.js|.eslintrc.cjs|.eslintrc.yaml|.eslintrc.yml)
+    PROTECTED_NAME="ESLint config" ;;
+  eslint.config.js|eslint.config.ts|eslint.config.mjs|eslint.config.cjs)
+    PROTECTED_NAME="ESLint flat config" ;;
+  biome.json|.biome.json)
+    PROTECTED_NAME="Biome config" ;;
+  .prettierrc|.prettierrc.json|.prettierrc.js|.prettierrc.yaml|.prettierrc.yml)
+    PROTECTED_NAME="Prettier config" ;;
+  prettier.config.js|prettier.config.ts|prettier.config.mjs|prettier.config.cjs)
+    PROTECTED_NAME="Prettier config" ;;
+  tsconfig.json|tsconfig.*.json)
+    PROTECTED_NAME="TypeScript config" ;;
+  .ruff.toml|ruff.toml)
+    PROTECTED_NAME="Ruff config" ;;
+  .stylelintrc|.stylelintrc.json|.stylelintrc.js|stylelint.config.js)
+    PROTECTED_NAME="Stylelint config" ;;
+  .editorconfig)
+    PROTECTED_NAME="EditorConfig" ;;
+esac
+
+# pyproject.toml は内容によって警告のみ
+if [[ "$LOWER" == "pyproject.toml" ]]; then
+  cat >&2 <<EOF
+⚠ NOTICE: pyproject.toml 編集 ($FILE_PATH)
+  [tool.ruff] / [tool.mypy] / [tool.pytest] セクションを変更する場合、
+  lint ルールを「緩める」変更でないかセルフレビューしてください。
+  dependencies の追加・更新は OK。
+EOF
+  exit 0
+fi
+
+if [[ -z "$PROTECTED_NAME" ]]; then
+  exit 0
+fi
+
+cat >&2 <<EOF
+ERROR: $PROTECTED_NAME ($FILE_PATH) の編集を検知、ブロックしました
+WHY:   linter/formatter 設定の変更は「エラーを消すための緩和」になりがち。
+       Sakasegawa の harness エンジニアリング推奨では、コード側を直すのが原則
+FIX:
+  1. lint エラーは設定でなくコード側で解消する (ruff check --fix / biome check --write)
+  2. 本当にルールを変える必要があるなら:
+     a. このファイルの編集を一時 bypass する代わりに、PR で説明 + チームレビュー
+     b. .claude/settings.local.json の deny で hook を一時 bypass
+  3. 新しいルール追加 (厳格化) は OK だが、その場合もコメントで理由を記載
+
+緊急 bypass: SKIP_LINTER_CONFIG_PROTECTION=1 を export して再度ツール実行
+EOF
+
+if [[ "${SKIP_LINTER_CONFIG_PROTECTION:-}" == "1" ]]; then
+  cat >&2 <<EOF
+⚠ NOTICE: SKIP_LINTER_CONFIG_PROTECTION=1 で bypass しました。PR で説明を必須化してください。
+EOF
+  exit 0
+fi
+exit 2

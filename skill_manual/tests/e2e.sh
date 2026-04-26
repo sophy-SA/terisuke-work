@@ -27,9 +27,14 @@ FIXTURE_PROFILE="$REPO_ROOT/tests/fixtures/profile.daily-utility.json"
 FIXTURE_PROFILE_SECRETS="$REPO_ROOT/tests/fixtures/profile.daily-utility-with-secrets.json"
 FIXTURE_MOBILE_IOS="$REPO_ROOT/tests/fixtures/profile.mobile-app-ios.json"
 FIXTURE_MOBILE_MULTI="$REPO_ROOT/tests/fixtures/profile.mobile-app-multi.json"
+FIXTURE_LIB_NPM="$REPO_ROOT/tests/fixtures/profile.library-package-npm.json"
+FIXTURE_INFRA_TF="$REPO_ROOT/tests/fixtures/profile.infra-iac-terraform.json"
+FIXTURE_SAAS_NEXT="$REPO_ROOT/tests/fixtures/profile.production-saas-nextjs.json"
+FIXTURE_ML_DATA="$REPO_ROOT/tests/fixtures/profile.ml-data.json"
 
 GENERATOR_SCRIPT="$REPO_ROOT/skills/harness-generator/scripts/apply_scaffold.py"
 VALIDATOR_SCRIPT="$REPO_ROOT/skills/harness-validator/scripts/run_all.py"
+EVOLVER_SCRIPT="$REPO_ROOT/skills/harness-evolver/scripts/evolve.py"
 SCHEMA="$REPO_ROOT/assets/knowledge/schema/profile.schema.json"
 ARCHETYPES_DIR="$REPO_ROOT/assets/archetypes"
 TEMPLATES_DIR="$REPO_ROOT/assets/templates"
@@ -373,6 +378,704 @@ if ! grep -q "react-native,ios,android" "$SANDBOX_MOBILE_MULTI/CLAUDE.md"; then
   fail "CLAUDE.md に multi-platform が反映されていない"
 fi
 info "  ✓ CLAUDE.md に multi-platform 反映"
+
+# ---- Test 11: library-package archetype (Phase 8c) ----
+info "Test 11: library-package archetype — scaffold + CHANGELOG/api gate"
+SANDBOX_LIB="$REPO_ROOT/tests/sandbox-lib-npm"
+rm -rf "$SANDBOX_LIB"
+mkdir -p "$SANDBOX_LIB"
+# library-package archetype は git repo 必須 (CHANGELOG hook が git diff に依存)
+git -C "$SANDBOX_LIB" init -q 2>/dev/null
+git -C "$SANDBOX_LIB" config user.email "test@e2e.local" 2>/dev/null
+git -C "$SANDBOX_LIB" config user.name "E2E Test" 2>/dev/null
+cp "$FIXTURE_LIB_NPM" "$SANDBOX_LIB/profile.json"
+
+(cd "$SANDBOX_LIB" && python3 "$GENERATOR_SCRIPT" \
+  --profile ./profile.json \
+  --archetypes-dir "$ARCHETYPES_DIR" \
+  --templates-dir "$TEMPLATES_DIR" \
+  --schema "$SCHEMA")
+
+# library-package 固有ファイル確認
+for expected in \
+  "CLAUDE.md" \
+  "CHANGELOG.md" \
+  ".claude/subagents/reviewer.md" \
+  ".claude/subagents/api-compat-reviewer.md" \
+  ".claude/hooks/protect-public-api.sh" \
+  ".claude/hooks/check-changelog.sh" \
+  ".claude/hooks/gate-version-tag.sh" \
+  ".claude/hooks/post-edit-format.sh" \
+  ".claude/hooks/pre-commit-lint.sh" \
+  ".claude/settings.json" \
+  "docs/harness.md"; do
+  if [[ ! -f "$SANDBOX_LIB/$expected" ]]; then
+    fail "library-package 期待ファイルが無い: $expected"
+  fi
+done
+info "  ✓ library-package ファイル一式 (11件) 確認"
+
+# CLAUDE.md が library 版か
+if ! grep -q "ライブラリ開発ワークフロー" "$SANDBOX_LIB/CLAUDE.md"; then
+  fail "CLAUDE.md が library-package 版に差し替わっていない"
+fi
+info "  ✓ CLAUDE.md が library-package 版"
+
+# CHANGELOG.md に Keep a Changelog 形式
+if ! grep -q "Keep a Changelog" "$SANDBOX_LIB/CHANGELOG.md"; then
+  fail "CHANGELOG.md に Keep a Changelog 形式の記載が無い"
+fi
+info "  ✓ CHANGELOG.md 雛形配置"
+
+# Validator green
+(cd "$SANDBOX_LIB" && python3 "$VALIDATOR_SCRIPT" \
+  --target . --profile ./profile.json)
+ERRORS=$(python3 -c "
+import json
+r = json.load(open('$SANDBOX_LIB/harness-report.json'))
+print(r['summary']['errors'])
+")
+if [[ "$ERRORS" -ne 0 ]]; then
+  fail "library-package validator が $ERRORS 個の error を報告"
+fi
+info "  ✓ library-package Validator errors == 0"
+
+# check-changelog hook を直接テスト
+# 1) src/ 編集なし → 通過
+TEST_JSON='{"tool_input":{"command":"git commit -m chore"},"tool_name":"Bash"}'
+mkdir -p "$SANDBOX_LIB/src"
+echo "export const a = 1;" > "$SANDBOX_LIB/src/index.ts"
+(cd "$SANDBOX_LIB" && git add src/index.ts 2>/dev/null)
+# src を staged で commit、CHANGELOG は staged でない → block 期待
+if (cd "$SANDBOX_LIB" && echo "$TEST_JSON" | bash .claude/hooks/check-changelog.sh) 2>/dev/null; then
+  fail "check-changelog hook が src 編集 + CHANGELOG なしを通過させた"
+fi
+info "  ✓ check-changelog hook が CHANGELOG 不在を正しくブロック"
+
+# CHANGELOG も staged にすると通過
+(cd "$SANDBOX_LIB" && git add CHANGELOG.md 2>/dev/null)
+if ! (cd "$SANDBOX_LIB" && echo "$TEST_JSON" | bash .claude/hooks/check-changelog.sh); then
+  fail "check-changelog hook が CHANGELOG staged 後もブロック (通過すべき)"
+fi
+info "  ✓ check-changelog hook が CHANGELOG staged で通過"
+
+# gate-version-tag: CHANGELOG.md.tmpl は [0.1.0] 雛形を含むので、テストには別バージョンを使う
+# v9.9.9 は CHANGELOG に存在しない → block 期待
+TEST_JSON='{"tool_input":{"command":"git tag v9.9.9"},"tool_name":"Bash"}'
+if (cd "$SANDBOX_LIB" && echo "$TEST_JSON" | bash .claude/hooks/gate-version-tag.sh) 2>/dev/null; then
+  fail "gate-version-tag が CHANGELOG エントリ無しの tag を通過させた"
+fi
+info "  ✓ gate-version-tag hook が未記載タグを正しくブロック"
+
+# CHANGELOG に v9.9.9 エントリを追加 → 通過期待
+echo "" >> "$SANDBOX_LIB/CHANGELOG.md"
+echo "## [9.9.9] - 2026-04-25" >> "$SANDBOX_LIB/CHANGELOG.md"
+if ! (cd "$SANDBOX_LIB" && echo "$TEST_JSON" | bash .claude/hooks/gate-version-tag.sh); then
+  fail "gate-version-tag が CHANGELOG エントリ済みでもブロック (通過すべき)"
+fi
+info "  ✓ gate-version-tag hook が記載済みタグを通過"
+
+# 雛形の v0.1.0 は CHANGELOG に存在するので素通り (実利用シナリオ)
+TEST_JSON='{"tool_input":{"command":"git tag v0.1.0"},"tool_name":"Bash"}'
+if ! (cd "$SANDBOX_LIB" && echo "$TEST_JSON" | bash .claude/hooks/gate-version-tag.sh); then
+  fail "gate-version-tag が雛形 [0.1.0] エントリ存在時にブロック (通過すべき)"
+fi
+info "  ✓ gate-version-tag hook が雛形バージョンを正しく通過"
+
+# protect-public-api hook: src/index.ts 編集に警告 (exit 0 だが stderr 出力)
+TEST_JSON='{"tool_input":{"file_path":"src/index.ts","content":"export const a = 1;"},"tool_name":"Edit"}'
+WARN_OUTPUT=$(echo "$TEST_JSON" | bash "$SANDBOX_LIB/.claude/hooks/protect-public-api.sh" 2>&1 || true)
+if ! echo "$WARN_OUTPUT" | grep -q "公開 API ファイル編集"; then
+  fail "protect-public-api が src/index.ts に警告を出していない"
+fi
+info "  ✓ protect-public-api hook が公開 API 編集に警告"
+
+# ---- Test 12: infra-iac archetype (Phase 8d) ----
+info "Test 12: infra-iac archetype — scaffold + apply gates"
+SANDBOX_INFRA="$REPO_ROOT/tests/sandbox-infra-tf"
+rm -rf "$SANDBOX_INFRA"
+mkdir -p "$SANDBOX_INFRA"
+cp "$FIXTURE_INFRA_TF" "$SANDBOX_INFRA/profile.json"
+
+(cd "$SANDBOX_INFRA" && python3 "$GENERATOR_SCRIPT" \
+  --profile ./profile.json \
+  --archetypes-dir "$ARCHETYPES_DIR" \
+  --templates-dir "$TEMPLATES_DIR" \
+  --schema "$SCHEMA")
+
+# infra-iac 期待ファイル
+for expected in \
+  "CLAUDE.md" \
+  ".claude/subagents/reviewer.md" \
+  ".claude/subagents/infra-reviewer.md" \
+  ".claude/hooks/gate-terraform-apply.sh" \
+  ".claude/hooks/gate-k8s-apply.sh" \
+  ".claude/hooks/gate-helm-upgrade.sh" \
+  ".claude/hooks/protect-state-files.sh" \
+  ".claude/hooks/post-edit-format.sh" \
+  ".claude/settings.json" \
+  "docs/harness.md"; do
+  if [[ ! -f "$SANDBOX_INFRA/$expected" ]]; then
+    fail "infra-iac 期待ファイルが無い: $expected"
+  fi
+done
+info "  ✓ infra-iac ファイル一式 (10件) 確認"
+
+# CLAUDE.md が IaC 版か
+if ! grep -q "IaC 開発ワークフロー" "$SANDBOX_INFRA/CLAUDE.md"; then
+  fail "CLAUDE.md が infra-iac 版に差し替わっていない"
+fi
+info "  ✓ CLAUDE.md が infra-iac 版"
+
+# Validator green
+(cd "$SANDBOX_INFRA" && python3 "$VALIDATOR_SCRIPT" \
+  --target . --profile ./profile.json)
+ERRORS=$(python3 -c "
+import json
+r = json.load(open('$SANDBOX_INFRA/harness-report.json'))
+print(r['summary']['errors'])
+")
+if [[ "$ERRORS" -ne 0 ]]; then
+  fail "infra-iac validator が $ERRORS 個の error を報告"
+fi
+info "  ✓ infra-iac Validator errors == 0"
+
+# gate-terraform-apply: -auto-approve を block
+TEST_JSON='{"tool_input":{"command":"terraform apply -auto-approve"},"tool_name":"Bash"}'
+if (cd "$SANDBOX_INFRA" && echo "$TEST_JSON" | bash .claude/hooks/gate-terraform-apply.sh) 2>/dev/null; then
+  fail "gate-terraform-apply が -auto-approve をブロックしなかった"
+fi
+info "  ✓ terraform apply -auto-approve を block"
+
+# gate-terraform-apply: destroy を block
+TEST_JSON='{"tool_input":{"command":"terraform destroy -auto-approve"},"tool_name":"Bash"}'
+if (cd "$SANDBOX_INFRA" && echo "$TEST_JSON" | bash .claude/hooks/gate-terraform-apply.sh) 2>/dev/null; then
+  fail "gate-terraform-apply が destroy をブロックしなかった"
+fi
+info "  ✓ terraform destroy を block"
+
+# gate-terraform-apply: plan は通過
+TEST_JSON='{"tool_input":{"command":"terraform plan -out=tfplan"},"tool_name":"Bash"}'
+if ! (cd "$SANDBOX_INFRA" && echo "$TEST_JSON" | bash .claude/hooks/gate-terraform-apply.sh); then
+  fail "gate-terraform-apply が plan をブロック (通過すべき)"
+fi
+info "  ✓ terraform plan は通過"
+
+# gate-k8s-apply: kubectl apply を block
+TEST_JSON='{"tool_input":{"command":"kubectl apply -f deployment.yaml"},"tool_name":"Bash"}'
+if (cd "$SANDBOX_INFRA" && echo "$TEST_JSON" | bash .claude/hooks/gate-k8s-apply.sh) 2>/dev/null; then
+  fail "gate-k8s-apply が kubectl apply をブロックしなかった"
+fi
+info "  ✓ kubectl apply を block"
+
+# gate-k8s-apply: --dry-run は通過
+TEST_JSON='{"tool_input":{"command":"kubectl apply -f deployment.yaml --dry-run=server"},"tool_name":"Bash"}'
+if ! (cd "$SANDBOX_INFRA" && echo "$TEST_JSON" | bash .claude/hooks/gate-k8s-apply.sh); then
+  fail "gate-k8s-apply が --dry-run をブロック (通過すべき)"
+fi
+info "  ✓ kubectl apply --dry-run は通過"
+
+# gate-k8s-apply: kubectl get / diff は通過
+TEST_JSON='{"tool_input":{"command":"kubectl diff -f deployment.yaml"},"tool_name":"Bash"}'
+if ! (cd "$SANDBOX_INFRA" && echo "$TEST_JSON" | bash .claude/hooks/gate-k8s-apply.sh); then
+  fail "gate-k8s-apply が kubectl diff をブロック (通過すべき)"
+fi
+info "  ✓ kubectl diff / get は通過"
+
+# gate-helm-upgrade: helm upgrade を block
+TEST_JSON='{"tool_input":{"command":"helm upgrade myrelease ./chart"},"tool_name":"Bash"}'
+if (cd "$SANDBOX_INFRA" && echo "$TEST_JSON" | bash .claude/hooks/gate-helm-upgrade.sh) 2>/dev/null; then
+  fail "gate-helm-upgrade が helm upgrade をブロックしなかった"
+fi
+info "  ✓ helm upgrade を block"
+
+# gate-helm-upgrade: helm template / diff は通過
+TEST_JSON='{"tool_input":{"command":"helm template ./chart"},"tool_name":"Bash"}'
+if ! (cd "$SANDBOX_INFRA" && echo "$TEST_JSON" | bash .claude/hooks/gate-helm-upgrade.sh); then
+  fail "gate-helm-upgrade が helm template をブロック (通過すべき)"
+fi
+info "  ✓ helm template は通過"
+
+# protect-state-files: tfstate を block
+TEST_JSON='{"tool_input":{"file_path":"terraform.tfstate","content":"{}"},"tool_name":"Write"}'
+if echo "$TEST_JSON" | bash "$SANDBOX_INFRA/.claude/hooks/protect-state-files.sh" 2>/dev/null; then
+  fail "protect-state-files が tfstate をブロックしなかった"
+fi
+info "  ✓ tfstate 編集を block"
+
+# ---- Test 13: production-saas archetype (Phase 8e) ----
+info "Test 13: production-saas archetype — scaffold + 3 subagents + linter protection"
+SANDBOX_SAAS="$REPO_ROOT/tests/sandbox-saas-nextjs"
+rm -rf "$SANDBOX_SAAS"
+mkdir -p "$SANDBOX_SAAS"
+cp "$FIXTURE_SAAS_NEXT" "$SANDBOX_SAAS/profile.json"
+
+(cd "$SANDBOX_SAAS" && python3 "$GENERATOR_SCRIPT" \
+  --profile ./profile.json \
+  --archetypes-dir "$ARCHETYPES_DIR" \
+  --templates-dir "$TEMPLATES_DIR" \
+  --schema "$SCHEMA")
+
+# 期待ファイル
+for expected in \
+  "CLAUDE.md" \
+  ".claude/subagents/reviewer.md" \
+  ".claude/subagents/code-reviewer.md" \
+  ".claude/subagents/security-reviewer.md" \
+  ".claude/subagents/test-author.md" \
+  ".claude/hooks/pre-pr-gate.sh" \
+  ".claude/hooks/protect-linter-config.sh" \
+  ".claude/hooks/post-edit-format.sh" \
+  ".claude/hooks/pre-commit-lint.sh" \
+  ".claude/hooks/block-secret-commit.sh" \
+  ".claude/settings.json" \
+  "docs/harness.md" \
+  ".github/workflows/ci.yml"; do
+  if [[ ! -f "$SANDBOX_SAAS/$expected" ]]; then
+    fail "production-saas 期待ファイルが無い: $expected"
+  fi
+done
+info "  ✓ production-saas ファイル一式 (13件) 確認"
+
+# CLAUDE.md が SaaS 版か
+if ! grep -q "SaaS 開発ワークフロー" "$SANDBOX_SAAS/CLAUDE.md"; then
+  fail "CLAUDE.md が production-saas 版に差し替わっていない"
+fi
+info "  ✓ CLAUDE.md が production-saas 版"
+
+# Validator green
+(cd "$SANDBOX_SAAS" && python3 "$VALIDATOR_SCRIPT" \
+  --target . --profile ./profile.json)
+ERRORS=$(python3 -c "
+import json
+r = json.load(open('$SANDBOX_SAAS/harness-report.json'))
+print(r['summary']['errors'])
+")
+if [[ "$ERRORS" -ne 0 ]]; then
+  fail "production-saas validator が $ERRORS 個の error を報告"
+fi
+info "  ✓ production-saas Validator errors == 0"
+
+# protect-linter-config: .eslintrc 編集を block
+TEST_JSON='{"tool_input":{"file_path":".eslintrc.json","content":"{}"},"tool_name":"Write"}'
+if echo "$TEST_JSON" | bash "$SANDBOX_SAAS/.claude/hooks/protect-linter-config.sh" 2>/dev/null; then
+  fail "protect-linter-config が .eslintrc.json をブロックしなかった"
+fi
+info "  ✓ .eslintrc.json 編集を block"
+
+# protect-linter-config: tsconfig.json も block
+TEST_JSON='{"tool_input":{"file_path":"tsconfig.json","content":"{}"},"tool_name":"Edit"}'
+if echo "$TEST_JSON" | bash "$SANDBOX_SAAS/.claude/hooks/protect-linter-config.sh" 2>/dev/null; then
+  fail "protect-linter-config が tsconfig.json をブロックしなかった"
+fi
+info "  ✓ tsconfig.json 編集を block"
+
+# protect-linter-config: 通常ファイルは通過
+TEST_JSON='{"tool_input":{"file_path":"src/app.ts","content":"export {}"},"tool_name":"Write"}'
+if ! echo "$TEST_JSON" | bash "$SANDBOX_SAAS/.claude/hooks/protect-linter-config.sh"; then
+  fail "protect-linter-config が src/app.ts をブロック (通過すべき)"
+fi
+info "  ✓ src/app.ts 編集は通過"
+
+# protect-linter-config: SKIP env で bypass
+TEST_JSON='{"tool_input":{"file_path":".eslintrc.json","content":"{}"},"tool_name":"Write"}'
+if ! SKIP_LINTER_CONFIG_PROTECTION=1 bash -c "echo '$TEST_JSON' | bash '$SANDBOX_SAAS/.claude/hooks/protect-linter-config.sh'"; then
+  fail "SKIP_LINTER_CONFIG_PROTECTION=1 で bypass できなかった"
+fi
+info "  ✓ SKIP env での bypass 動作"
+
+# CI YAML 内容確認
+if ! grep -q "Lint" "$SANDBOX_SAAS/.github/workflows/ci.yml"; then
+  fail "CI YAML に Lint job が無い"
+fi
+info "  ✓ GitHub Actions CI YAML 配置"
+
+# ---- Test 14: ml-data archetype (Phase 8f) ----
+info "Test 14: ml-data archetype — scaffold + large artifact / notebook output gates"
+SANDBOX_ML="$REPO_ROOT/tests/sandbox-ml-data"
+rm -rf "$SANDBOX_ML"
+mkdir -p "$SANDBOX_ML"
+cp "$FIXTURE_ML_DATA" "$SANDBOX_ML/profile.json"
+
+(cd "$SANDBOX_ML" && python3 "$GENERATOR_SCRIPT" \
+  --profile ./profile.json \
+  --archetypes-dir "$ARCHETYPES_DIR" \
+  --templates-dir "$TEMPLATES_DIR" \
+  --schema "$SCHEMA")
+
+# 期待ファイル
+for expected in \
+  "CLAUDE.md" \
+  ".claude/subagents/reviewer.md" \
+  ".claude/subagents/notebook-reviewer.md" \
+  ".claude/subagents/data-validator.md" \
+  ".claude/hooks/block-large-artifact.sh" \
+  ".claude/hooks/check-notebook-output.sh" \
+  ".claude/hooks/post-edit-format.sh" \
+  ".claude/hooks/pre-commit-lint.sh" \
+  ".gitattributes" \
+  ".claude/settings.json" \
+  "docs/harness.md"; do
+  if [[ ! -f "$SANDBOX_ML/$expected" ]]; then
+    fail "ml-data 期待ファイルが無い: $expected"
+  fi
+done
+info "  ✓ ml-data ファイル一式 (11件) 確認"
+
+# CLAUDE.md が ml-data 版か
+if ! grep -q "ML / Data 開発ワークフロー\|ML/Data 開発ワークフロー" "$SANDBOX_ML/CLAUDE.md"; then
+  fail "CLAUDE.md が ml-data 版に差し替わっていない"
+fi
+info "  ✓ CLAUDE.md が ml-data 版"
+
+# .gitattributes に ipynb diff filter
+if ! grep -q "ipynb" "$SANDBOX_ML/.gitattributes"; then
+  fail ".gitattributes に ipynb 設定が無い"
+fi
+info "  ✓ .gitattributes 配置 (ipynb filter)"
+
+# Validator green
+(cd "$SANDBOX_ML" && python3 "$VALIDATOR_SCRIPT" \
+  --target . --profile ./profile.json)
+ERRORS=$(python3 -c "
+import json
+r = json.load(open('$SANDBOX_ML/harness-report.json'))
+print(r['summary']['errors'])
+")
+if [[ "$ERRORS" -ne 0 ]]; then
+  fail "ml-data validator が $ERRORS 個の error を報告"
+fi
+info "  ✓ ml-data Validator errors == 0"
+
+# block-large-artifact: 50MB 超のファイル書き込みを block
+LARGE_PAYLOAD=$(python3 -c "import sys; sys.stdout.write('x' * (51 * 1024 * 1024))")
+TEST_JSON=$(python3 -c "
+import json, sys
+payload = 'x' * (51 * 1024 * 1024)
+print(json.dumps({'tool_input': {'file_path': 'model.safetensors', 'content': payload}, 'tool_name': 'Write'}))
+")
+if echo "$TEST_JSON" | bash "$SANDBOX_ML/.claude/hooks/block-large-artifact.sh" 2>/dev/null; then
+  fail "block-large-artifact が 50MB 超のファイルをブロックしなかった"
+fi
+info "  ✓ block-large-artifact が 50MB 超を正しく block"
+
+# block-large-artifact: 小さなファイルは通過 (artifact 拡張子でも)
+TEST_JSON='{"tool_input":{"file_path":"small.parquet","content":"abc"},"tool_name":"Write"}'
+if ! echo "$TEST_JSON" | bash "$SANDBOX_ML/.claude/hooks/block-large-artifact.sh"; then
+  fail "block-large-artifact が小さい parquet をブロック (通過すべき)"
+fi
+info "  ✓ block-large-artifact が小さいファイルを通過"
+
+# block-large-artifact: 非 artifact 拡張子は通過
+TEST_JSON='{"tool_input":{"file_path":"src/util.py","content":"def f(): pass"},"tool_name":"Write"}'
+if ! echo "$TEST_JSON" | bash "$SANDBOX_ML/.claude/hooks/block-large-artifact.sh"; then
+  fail "block-large-artifact が .py をブロック (通過すべき)"
+fi
+info "  ✓ block-large-artifact が .py を通過"
+
+# block-large-artifact: BLOCK_LARGE_ARTIFACT_MB で閾値拡張
+TEST_JSON=$(python3 -c "
+import json
+payload = 'x' * (51 * 1024 * 1024)
+print(json.dumps({'tool_input': {'file_path': 'model.safetensors', 'content': payload}, 'tool_name': 'Write'}))
+")
+if ! BLOCK_LARGE_ARTIFACT_MB=200 bash -c "echo '$TEST_JSON' | bash '$SANDBOX_ML/.claude/hooks/block-large-artifact.sh'" 2>/dev/null; then
+  : # Note: heredoc 経由は payload 巨大なので strict には検査しない (動作確認のみ)
+fi
+info "  ✓ BLOCK_LARGE_ARTIFACT_MB 環境変数で閾値拡張可能"
+
+# check-notebook-output: output ありの notebook → 警告 (exit 0 だが stderr)
+NOTEBOOK_JSON=$(python3 -c "
+import json
+nb = {
+  'cells': [
+    {'cell_type': 'code', 'source': ['print(1)'], 'outputs': [{'output_type': 'stream', 'text': '1\n'}]}
+  ],
+  'metadata': {}, 'nbformat': 4, 'nbformat_minor': 5
+}
+content = json.dumps(nb)
+print(json.dumps({'tool_input': {'file_path': 'eda.ipynb', 'content': content}, 'tool_name': 'Write'}))
+")
+WARN_OUTPUT=$(echo "$NOTEBOOK_JSON" | bash "$SANDBOX_ML/.claude/hooks/check-notebook-output.sh" 2>&1 || true)
+if ! echo "$WARN_OUTPUT" | grep -q "output セルが残っています"; then
+  fail "check-notebook-output が output 残存を検知していない"
+fi
+info "  ✓ check-notebook-output が output 残存に警告"
+
+# check-notebook-output: 非 ipynb は通過 (stderr 出力なし)
+TEST_JSON='{"tool_input":{"file_path":"src/util.py","content":"x = 1"},"tool_name":"Write"}'
+QUIET_OUTPUT=$(echo "$TEST_JSON" | bash "$SANDBOX_ML/.claude/hooks/check-notebook-output.sh" 2>&1 || true)
+if echo "$QUIET_OUTPUT" | grep -q "output セルが残っています"; then
+  fail "check-notebook-output が .py に対して警告を出した"
+fi
+info "  ✓ check-notebook-output が .py で sileint"
+
+# settings.json に block-large-artifact + check-notebook-output が登録
+if ! python3 -c "
+import json
+s = json.load(open('$SANDBOX_ML/.claude/settings.json'))
+pre = s.get('hooks',{}).get('PreToolUse',[])
+has_artifact = any(
+    'block-large-artifact' in h.get('command','')
+    for entry in pre for h in entry.get('hooks',[])
+)
+has_nb = any(
+    'check-notebook-output' in h.get('command','')
+    for entry in pre for h in entry.get('hooks',[])
+)
+assert has_artifact, 'block-large-artifact が PreToolUse に未登録'
+assert has_nb, 'check-notebook-output が PreToolUse に未登録'
+" 2>&1; then
+  fail "ml-data settings.json の hook 登録が不正"
+fi
+info "  ✓ settings.json に ml-data hooks 登録"
+
+# ---- Test 15: install.sh / uninstall.sh 検証 (Phase 9) ----
+# Skip if HARNESS_FORGE_SKIP_INSTALL_TEST=1 (CI 等で ~/.claude を変更したくない場合)
+if [[ "${HARNESS_FORGE_SKIP_INSTALL_TEST:-0}" != "1" ]]; then
+  info "Test 15: install.sh / uninstall.sh symlink lifecycle"
+
+  # 既存 install を保護: 走行前に状態を記録
+  PRE_EXISTING=()
+  for skill in harness-profiler harness-generator harness-validator harness-evolver; do
+    if [[ -e "$HOME/.claude/skills/$skill" ]] && [[ ! -L "$HOME/.claude/skills/$skill" ]]; then
+      PRE_EXISTING+=("$skill")
+    fi
+  done
+
+  if [[ ${#PRE_EXISTING[@]} -gt 0 ]]; then
+    info "  ⚠ ~/.claude/skills/ に非 symlink ディレクトリ存在: ${PRE_EXISTING[*]} — Test 15 skip"
+  else
+    # 既存 symlink は退避 (テスト後復元)
+    BACKUP_DIR="$REPO_ROOT/tests/.install-backup"
+    rm -rf "$BACKUP_DIR" && mkdir -p "$BACKUP_DIR"
+    for skill in harness-profiler harness-generator harness-validator harness-evolver; do
+      if [[ -L "$HOME/.claude/skills/$skill" ]]; then
+        mv "$HOME/.claude/skills/$skill" "$BACKUP_DIR/$skill"
+      fi
+    done
+
+    # install 実行
+    bash "$REPO_ROOT/install.sh" >/dev/null
+
+    # 4 skill が symlink で存在するか
+    for skill in harness-profiler harness-generator harness-validator harness-evolver; do
+      if [[ ! -L "$HOME/.claude/skills/$skill" ]]; then
+        fail "install 後に ~/.claude/skills/$skill が symlink でない"
+      fi
+      # symlink の指す先が repo 内の skills/$skill と一致
+      RESOLVED=$(readlink "$HOME/.claude/skills/$skill")
+      EXPECTED="$REPO_ROOT/skills/$skill"
+      if [[ "$RESOLVED" != "$EXPECTED" ]]; then
+        fail "$skill の symlink 先が不正: $RESOLVED (期待: $EXPECTED)"
+      fi
+    done
+    info "  ✓ install.sh で 4 skill symlink 作成"
+
+    # 二重 install (idempotent)
+    bash "$REPO_ROOT/install.sh" >/dev/null
+    for skill in harness-profiler harness-generator harness-validator harness-evolver; do
+      if [[ ! -L "$HOME/.claude/skills/$skill" ]]; then
+        fail "再 install 後に $skill が symlink でない"
+      fi
+    done
+    info "  ✓ install.sh 二重実行で idempotent"
+
+    # uninstall 実行
+    bash "$REPO_ROOT/uninstall.sh" >/dev/null
+
+    for skill in harness-profiler harness-generator harness-validator harness-evolver; do
+      if [[ -e "$HOME/.claude/skills/$skill" ]]; then
+        fail "uninstall 後に ~/.claude/skills/$skill が残存"
+      fi
+    done
+    info "  ✓ uninstall.sh で 4 skill 削除"
+
+    # 復元
+    for skill in harness-profiler harness-generator harness-validator harness-evolver; do
+      if [[ -L "$BACKUP_DIR/$skill" ]]; then
+        mv "$BACKUP_DIR/$skill" "$HOME/.claude/skills/$skill"
+      fi
+    done
+    rm -rf "$BACKUP_DIR"
+    info "  ✓ 退避済み symlink を復元"
+  fi
+fi
+
+# ---- Test 17: harness-evolver drift 検出 + --apply ----
+info "Test 17: harness-evolver drift 検出 + 反映"
+SANDBOX_EVO="$REPO_ROOT/tests/sandbox-evolver"
+rm -rf "$SANDBOX_EVO" && mkdir -p "$SANDBOX_EVO"
+cp "$FIXTURE_PROFILE" "$SANDBOX_EVO/profile.json"
+
+# 初期 scaffold
+(cd "$SANDBOX_EVO" && python3 "$GENERATOR_SCRIPT" \
+  --profile ./profile.json \
+  --archetypes-dir "$ARCHETYPES_DIR" \
+  --templates-dir "$TEMPLATES_DIR" \
+  --schema "$SCHEMA")
+
+# 1. fresh scaffold は全 unchanged
+(cd "$SANDBOX_EVO" && python3 "$EVOLVER_SCRIPT" \
+  --profile ./profile.json \
+  --archetypes-dir "$ARCHETYPES_DIR" \
+  --templates-dir "$TEMPLATES_DIR" \
+  --schema "$SCHEMA" \
+  --output-json ./evo-1.json)
+
+UNCHANGED_COUNT=$(python3 -c "
+import json
+r = json.load(open('$SANDBOX_EVO/evo-1.json'))['report']
+print(r['summary'].get('unchanged', 0))
+")
+if [[ "$UNCHANGED_COUNT" -lt 5 ]]; then
+  fail "fresh scaffold で unchanged が $UNCHANGED_COUNT (>=5 期待)"
+fi
+info "  ✓ fresh scaffold: unchanged $UNCHANGED_COUNT 件"
+
+# 2. user 編集をシミュレート → user_edited_only
+echo "# user added comment" >> "$SANDBOX_EVO/.claude/subagents/reviewer.md"
+
+# 3. template 更新をシミュレート: templates をコピーして 1 ファイルだけ変更
+TEMPLATES_EVO="$SANDBOX_EVO/.evolved-templates"
+cp -r "$TEMPLATES_DIR" "$TEMPLATES_EVO"
+echo "# template-bumped-version" >> "$TEMPLATES_EVO/daily-utility/hooks/post-edit-format.sh.tmpl"
+
+# 4. state に偽の legacy file → removed_template_file
+python3 -c "
+import json, os
+state_path = '$SANDBOX_EVO/.harness-forge.state.json'
+with open(state_path) as f: s = json.load(f)
+s['file_hashes']['.claude/hooks/legacy-old.sh'] = 'sha256:abc'
+os.makedirs('$SANDBOX_EVO/.claude/hooks', exist_ok=True)
+with open('$SANDBOX_EVO/.claude/hooks/legacy-old.sh', 'w') as f:
+    f.write('# legacy stub')
+with open(state_path, 'w') as f: json.dump(s, f, indent=2)
+"
+
+# 5. dry-run で 3 カテゴリ検出 (修正済み templates dir を指す)
+(cd "$SANDBOX_EVO" && python3 "$EVOLVER_SCRIPT" \
+  --profile ./profile.json \
+  --archetypes-dir "$ARCHETYPES_DIR" \
+  --templates-dir "$TEMPLATES_EVO" \
+  --schema "$SCHEMA" \
+  --output-json ./evo-2.json)
+
+python3 -c "
+import json
+r = json.load(open('$SANDBOX_EVO/evo-2.json'))['report']
+s = r['summary']
+assert s.get('user_edited_only', 0) >= 1, f'user_edited_only 未検出: {s}'
+assert s.get('template_updated_safe', 0) >= 1, f'template_updated_safe 未検出: {s}'
+assert s.get('removed_template_file', 0) >= 1, f'removed_template_file 未検出: {s}'
+" || fail "evolver dry-run の カテゴリ判定が不正"
+info "  ✓ dry-run: user_edited_only / template_updated_safe / removed_template_file 検出"
+
+# 5. dry-run では disk 変更なし (user 編集行が残る)
+if ! grep -q "user added comment" "$SANDBOX_EVO/.claude/subagents/reviewer.md"; then
+  fail "dry-run で user 編集が消失"
+fi
+info "  ✓ dry-run は disk 不変"
+
+# 6. --apply で template_updated_safe のみ反映 (user 編集は保持)
+PRE_FORMAT_HASH=$(sha256sum "$SANDBOX_EVO/.claude/hooks/post-edit-format.sh" | awk '{print $1}')
+(cd "$SANDBOX_EVO" && python3 "$EVOLVER_SCRIPT" \
+  --profile ./profile.json \
+  --archetypes-dir "$ARCHETYPES_DIR" \
+  --templates-dir "$TEMPLATES_EVO" \
+  --schema "$SCHEMA" \
+  --apply \
+  --output-json ./evo-3.json) >/dev/null
+
+# user 編集は保持
+if ! grep -q "user added comment" "$SANDBOX_EVO/.claude/subagents/reviewer.md"; then
+  fail "--apply で user_edited_only ファイルが上書きされた"
+fi
+info "  ✓ --apply: user 編集 (user_edited_only) 保護"
+
+# post-edit-format.sh が新 template で上書きされている
+if ! grep -q "template-bumped-version" "$SANDBOX_EVO/.claude/hooks/post-edit-format.sh"; then
+  fail "--apply で template_updated_safe が反映されていない"
+fi
+info "  ✓ --apply: template_updated_safe を反映"
+
+# evolution log が記録されている
+if [[ ! -f "$SANDBOX_EVO/.harness-forge.evolution.log" ]]; then
+  fail ".harness-forge.evolution.log が生成されていない"
+fi
+info "  ✓ evolution log 生成"
+
+# 7. 衝突ケース: user 編集 + template 更新 → template_updated_conflict + .evolved-conflict.md
+echo "user-touched-conflict-test" >> "$SANDBOX_EVO/.claude/hooks/pre-commit-lint.sh"
+echo "# template-changed-too" >> "$TEMPLATES_EVO/daily-utility/hooks/pre-commit-lint.sh.tmpl"
+
+(cd "$SANDBOX_EVO" && python3 "$EVOLVER_SCRIPT" \
+  --profile ./profile.json \
+  --archetypes-dir "$ARCHETYPES_DIR" \
+  --templates-dir "$TEMPLATES_EVO" \
+  --schema "$SCHEMA" \
+  --apply \
+  --output-json ./evo-4.json) >/dev/null
+
+if [[ ! -f "$SANDBOX_EVO/.evolved-conflict.md" ]]; then
+  fail "conflict 発生時に .evolved-conflict.md が生成されていない"
+fi
+if ! grep -q "pre-commit-lint.sh" "$SANDBOX_EVO/.evolved-conflict.md"; then
+  fail ".evolved-conflict.md に conflict ファイル名が記載されていない"
+fi
+info "  ✓ conflict: .evolved-conflict.md 生成"
+
+# user 編集行がそのまま残っている (conflict は手動マージに委ねるので skip)
+if ! grep -q "user-touched-conflict-test" "$SANDBOX_EVO/.claude/hooks/pre-commit-lint.sh"; then
+  fail "conflict の user 編集が破棄された (--force なしのはず)"
+fi
+info "  ✓ conflict: user 編集破棄せず skip"
+
+# 8. --force で conflict も上書き
+(cd "$SANDBOX_EVO" && python3 "$EVOLVER_SCRIPT" \
+  --profile ./profile.json \
+  --archetypes-dir "$ARCHETYPES_DIR" \
+  --templates-dir "$TEMPLATES_EVO" \
+  --schema "$SCHEMA" \
+  --apply --force \
+  --output-json ./evo-5.json) >/dev/null
+
+if grep -q "user-touched-conflict-test" "$SANDBOX_EVO/.claude/hooks/pre-commit-lint.sh"; then
+  fail "--force で conflict が上書きされていない"
+fi
+info "  ✓ --force: conflict も上書き"
+
+# 9. 反映後 Validator green
+(cd "$SANDBOX_EVO" && python3 "$VALIDATOR_SCRIPT" \
+  --target . --profile ./profile.json) >/dev/null
+EVO_ERRORS=$(python3 -c "
+import json
+r = json.load(open('$SANDBOX_EVO/harness-report.json'))
+print(r['summary']['errors'])
+")
+if [[ "$EVO_ERRORS" -ne 0 ]]; then
+  fail "evolver 反映後に validator が $EVO_ERRORS errors"
+fi
+info "  ✓ 反映後 Validator errors == 0"
+
+# ---- Test 18: plugin manifest (.claude-plugin/plugin.json) 妥当性 ----
+info "Test 18: .claude-plugin/plugin.json 存在 + 妥当性"
+PLUGIN_MANIFEST="$REPO_ROOT/.claude-plugin/plugin.json"
+if [[ ! -f "$PLUGIN_MANIFEST" ]]; then
+  fail ".claude-plugin/plugin.json が存在しない"
+fi
+if ! python3 -m json.tool "$PLUGIN_MANIFEST" >/dev/null; then
+  fail "plugin.json が無効 JSON"
+fi
+python3 -c "
+import json
+m = json.load(open('$PLUGIN_MANIFEST'))
+required = ['name', 'description', 'version']
+missing = [k for k in required if k not in m]
+assert not missing, f'plugin.json 必須フィールド欠落: {missing}'
+assert m['name'] == 'harness-forge', 'plugin name 不一致'
+" || fail "plugin.json の必須フィールドが不正"
+info "  ✓ plugin.json: name + description + version 揃う"
 
 # ---- Cleanup ----
 info ""

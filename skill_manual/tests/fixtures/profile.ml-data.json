@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-04-26T12:00:00Z",
+  "project": {
+    "name": "sandbox-ml-pipeline",
+    "summary": "E2E テスト用 Jupyter Notebook + pytest + DVC ML パイプライン fixture",
+    "languages": ["python"],
+    "root_kind": ["notebook"],
+    "design_focus": false
+  },
+  "archetype_primary": "ml-data",
+  "archetype_scores": {
+    "daily-utility": 0.05,
+    "library-package": 0.00,
+    "production-saas": 0.05,
+    "mobile-app": 0.00,
+    "ml-data": 0.85,
+    "infra-iac": 0.05
+  },
+  "workflow": {
+    "plan_work_review": false,
+    "precommit_strictness": "lint-only",
+    "long_running_agents": true
+  },
+  "quality_gates": {
+    "required_checks": ["lint", "format", "unit-test"],
+    "ci_external": false
+  },
+  "review": {
+    "ai_second_opinion": false,
+    "specialized_reviewers": []
+  },
+  "safety": {
+    "handles_secrets": false,
+    "destructive_ops": []
+  },
+  "meta": {
+    "locale": "ja",
+    "existing_claude_dir": false,
+    "intents": [
+      "random seed を必ず固定して実験する",
+      "model / dataset を repo に直 commit せず DVC で管理",
+      "notebook output は commit 前に nbstripout で削除"
+    ]
+  },
+  "overrides": {
+    "exclude_subagents": [],
+    "force_include_hooks": []
+  }
+}

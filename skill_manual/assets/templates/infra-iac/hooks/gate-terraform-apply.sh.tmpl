@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+# gate-terraform-apply.sh
+# =========================================================================
+# PreToolUse hook (matcher: Bash): terraform の破壊的サブコマンドを gate する
+#
+# 動作:
+#   - terraform apply -auto-approve → exit 2 (block)
+#   - terraform destroy → exit 2 (block)
+#   - terraform apply (auto-approve なし、対話的) → 警告のみ exit 0
+#   - terraform plan / fmt / validate / init → exit 0 (通過)
+# =========================================================================
+
+set -euo pipefail
+
+INPUT_JSON=$(cat)
+
+COMMAND=$(echo "$INPUT_JSON" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    print(d.get('tool_input', {}).get('command', ''))
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+
+if [[ -z "$COMMAND" ]]; then
+  exit 0
+fi
+
+# terraform 以外は対象外
+if ! echo "$COMMAND" | grep -qE '\bterraform\b'; then
+  exit 0
+fi
+
+# destroy は常時 block (replace でも -auto-approve が伴う場合 destroy 同等)
+if echo "$COMMAND" | grep -qE '\bterraform\s+destroy\b'; then
+  cat >&2 <<EOF
+ERROR: terraform destroy を local から実行しようとしています
+WHY:   destroy はリソース削除でほぼ rollback 不可能。意図しない reference のリソースが消える可能性
+FIX:
+  1. 本当に必要か再確認
+  2. 必要なら CI 経由 + manual approval で実行
+  3. 部分的な削除なら 'terraform state rm' + 'terraform apply' を検討
+  4. 一時 bypass は .claude/settings.local.json の deny で可能だが原則非推奨
+
+コマンド: ${COMMAND:0:200}
+EOF
+  exit 2
+fi
+
+# apply -auto-approve は block
+if echo "$COMMAND" | grep -qE '\bterraform\s+apply\b' && echo "$COMMAND" | grep -qE -- '-auto-approve'; then
+  cat >&2 <<EOF
+ERROR: terraform apply -auto-approve を local から実行しようとしています
+WHY:   -auto-approve は plan 出力を確認せず apply するため、意図しない変更を fire-and-forget する
+FIX:
+  1. -auto-approve を外して対話的に確認 (推奨)
+  2. CI 経由なら GitHub Actions / Atlantis で plan を PR にコメント、approval 後に apply
+  3. local で確実に apply したい場合は 'terraform plan -out=tfplan' + 'terraform apply tfplan'
+
+コマンド: ${COMMAND:0:200}
+EOF
+  exit 2
+fi
+
+# 対話的 apply (auto-approve なし) は警告のみ
+if echo "$COMMAND" | grep -qE '\bterraform\s+apply\b'; then
+  cat >&2 <<EOF
+⚠ NOTICE: terraform apply (対話的) を実行します
+  確認:
+    - plan の差分を必ず確認
+    - prod 環境への変更なら staging で検証済みか
+    - rollback 手順を共有しているか
+EOF
+  exit 0
+fi
+
+# import / state mv / state rm は state 変更扱いで警告
+if echo "$COMMAND" | grep -qE '\bterraform\s+(import|state\s+(mv|rm))'; then
+  cat >&2 <<EOF
+⚠ NOTICE: terraform state 変更コマンドを実行します
+  state 変更は backend 側に即時反映されます。リカバリ計画を共有してください。
+EOF
+  exit 0
+fi
+
+exit 0

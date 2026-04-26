@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# protect-public-api.sh
+# =========================================================================
+# PreToolUse hook (matcher: Edit|Write): 公開 API エントリポイントの編集に警告
+#
+# 対象パターン:
+#   TS/JS: src/index.{ts,tsx,js,jsx,mjs,cjs}, index.{ts,...}, lib/index.{ts,...}
+#   Python: src/<pkg>/__init__.py (depth=2), <pkg>/__init__.py (depth=1 root level)
+#   Rust:  src/lib.rs
+#   manifest: package.json (exports/main 変更が breaking 可能)
+#
+# 動作:
+#   - ブロックしない (編集は必要)
+#   - stderr に警告 + api-compat-reviewer 呼び出し勧告
+# =========================================================================
+
+set -euo pipefail
+
+INPUT_JSON=$(cat)
+
+FILE_PATH=$(echo "$INPUT_JSON" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    print(d.get('tool_input', {}).get('file_path', ''))
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+
+if [[ -z "$FILE_PATH" ]]; then
+  exit 0
+fi
+
+# 公開 API らしさを判定
+IS_PUBLIC_API=""
+case "$FILE_PATH" in
+  */src/index.ts|*/src/index.tsx|*/src/index.js|*/src/index.jsx|*/src/index.mjs|*/src/index.cjs)
+    IS_PUBLIC_API="TS/JS public entry (src/index.*)"
+    ;;
+  */index.ts|*/index.tsx|*/index.js|*/index.jsx|*/index.mjs|*/index.cjs)
+    # 明らかにテストや internal でないことを確認
+    if [[ "$FILE_PATH" != *"/test/"* && "$FILE_PATH" != *"/tests/"* && "$FILE_PATH" != *"/__tests__/"* ]]; then
+      IS_PUBLIC_API="TS/JS root index"
+    fi
+    ;;
+  */lib/index.ts|*/lib/index.js)
+    IS_PUBLIC_API="TS/JS lib entry"
+    ;;
+  */src/lib.rs)
+    IS_PUBLIC_API="Rust crate entry (src/lib.rs)"
+    ;;
+  */__init__.py)
+    # Python __init__.py: tests 配下や private 命名 (_prefix) は除外
+    if [[ "$FILE_PATH" != *"/tests/"* && "$FILE_PATH" != *"/test/"* ]]; then
+      IS_PUBLIC_API="Python package __init__.py"
+    fi
+    ;;
+  */package.json)
+    IS_PUBLIC_API="package.json (main / exports に注意)"
+    ;;
+  */pyproject.toml)
+    IS_PUBLIC_API="pyproject.toml (project.entry-points / dependencies)"
+    ;;
+  */Cargo.toml)
+    IS_PUBLIC_API="Cargo.toml (公開 dependency / feature)"
+    ;;
+esac
+
+if [[ -z "$IS_PUBLIC_API" ]]; then
+  exit 0
+fi
+
+cat >&2 <<EOF
+⚠ NOTICE: 公開 API ファイル編集を検知 ($FILE_PATH)
+  種別: $IS_PUBLIC_API
+
+このファイルへの変更はライブラリ利用者に影響する可能性があります。
+コミット前に以下を実施してください:
+
+  1. mobile-reviewer (もとい) api-compat-reviewer subagent でレビュー
+     例: "@api-compat-reviewer (agent) この差分の semver 影響を判定して"
+  2. 変更内容を CHANGELOG.md に記載 (Breaking / Added / Fixed のいずれか)
+  3. semver 規律に従ってバージョン bump を計画
+
+(編集はブロックしません。注意喚起のみ)
+EOF
+
+exit 0

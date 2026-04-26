@@ -1,25 +1,68 @@
-# ml-data archetype: Jupyter + pytest + DVC/MLflow 等の ML パイプライン向け
+# ml-data archetype: Jupyter Notebook + pytest + DVC/MLflow ML パイプライン向け
 #
-# MVP スコープ: stub のみ。Phase 8 で実装。
-# 設計方針 (将来):
+# 設計方針:
 #   - daily-utility extends
 #   - notebook-reviewer / data-validator subagents
-#   - .gitattributes で notebook diff filter
-#   - >50MB artifact ブロック hook
-#   - データ品質層 (GX / dbt Tests) をオプション
-#   - Fan-out/Fan-in パターン (複数モデル並列評価)
+#   - >50MB artifact ブロック hook (model file / dataset 誤コミット防止)
+#   - .gitattributes で notebook の output 列を diff から除外
+#   - 再現性のために random seed 固定を CLAUDE.md で明記
 
 name: ml-data
-status: planned
+status: complete
 description: |
   Jupyter Notebook 中心、pytest + DVC/MLflow による ML パイプライン向け。
-  データ妥当性検証、大容量 artifact ブロック、notebook diff filter を scaffold する。
-  MVP では未実装。Phase 8 で実装予定。
+  notebook 出力削除、大容量 artifact ブロック、データ妥当性検証 subagent を scaffold する。
 
 extends: daily-utility
 
-templates: []
+templates:
+  - src: ml-data/CLAUDE.md.tmpl
+    dest: CLAUDE.md
+    merge: skip_if_exists
+
+  - src: ml-data/subagents/notebook-reviewer.md.tmpl
+    dest: .claude/subagents/notebook-reviewer.md
+    merge: overwrite
+
+  - src: ml-data/subagents/data-validator.md.tmpl
+    dest: .claude/subagents/data-validator.md
+    merge: overwrite
+
+  # PreToolUse: 50MB 超のファイル書き込みをブロック (model / dataset)
+  - src: ml-data/hooks/block-large-artifact.sh.tmpl
+    dest: .claude/hooks/block-large-artifact.sh
+    mode: "0755"
+    merge: overwrite
+
+  # PreToolUse: notebook 編集時に output 残存を警告
+  - src: ml-data/hooks/check-notebook-output.sh.tmpl
+    dest: .claude/hooks/check-notebook-output.sh
+    mode: "0755"
+    merge: overwrite
+
+  # .gitattributes: ipynb の diff を nbstripout 風に
+  - src: ml-data/gitattributes.tmpl
+    dest: .gitattributes
+    merge: skip_if_exists
+
+  - src: ml-data/settings.patch.json.tmpl
+    dest: .claude/settings.json
+    merge: json-deep
+
+  - src: ml-data/docs/harness.md.tmpl
+    dest: docs/harness.md
+    merge: skip_if_exists
+
 conditional_templates: []
-variables: {}
-subagents: []
-hooks: {}
+
+subagents:
+  - reviewer
+  - notebook-reviewer
+  - data-validator
+
+hooks:
+  PreToolUse:
+    - matcher: "Write"
+      script: ".claude/hooks/block-large-artifact.sh"
+    - matcher: "Edit|Write"
+      script: ".claude/hooks/check-notebook-output.sh"

@@ -1,0 +1,53 @@
+# {{PROJECT_NAME}}
+
+{{PROJECT_SUMMARY}}
+
+## ML / Data 開発ワークフロー
+
+実験の**再現性**と**データ・モデルの取り回し**が中心課題。
+
+### 起動時ルーチン
+
+1. `pwd` と `git log --oneline -10` で現状把握
+2. `git status` で大容量 artifact が誤って staged されていないか確認 (50MB 超は hook で block)
+3. notebook の output 残存を確認 (commit 前に nbstripout 推奨)
+4. 既存の失敗テスト・data validation エラーを先に修正
+
+### 作業ルール
+
+- **再現性**: random seed を必ず固定 (`numpy.random.seed`, `torch.manual_seed`, `random.seed`)
+- 大容量データは DVC / git-lfs で管理 (リポに直接 commit しない)
+- notebook は incremental に書く (1 セル = 1 機能)
+- 変更後は `notebook-reviewer` でセル構造をレビュー
+- データ I/O は `data-validator` で型・分布・欠損率を確認
+- model 評価は MLflow / Weights & Biases に記録
+
+### 推奨ツール
+
+- **データ**: pandas / polars + Great Expectations (data quality) / dbt tests
+- **学習**: pytorch / scikit-learn / lightning
+- **追跡**: MLflow / W&B / DVC
+- **検証**: pytest + pytest-randomly (順序非依存) + lm-evaluation-harness (LLM 系)
+
+## プロジェクト固有
+
+- **言語**: {{LANGUAGES_CSV}}
+- **意図1**: {{INTENT_1}}
+- **意図2**: {{INTENT_2}}
+- **意図3**: {{INTENT_3}}
+
+## 参照
+
+- notebook レビュー: `.claude/subagents/notebook-reviewer.md`
+- データ検証: `.claude/subagents/data-validator.md`
+- 大容量 block: `.claude/hooks/block-large-artifact.sh`
+- notebook output 警告: `.claude/hooks/check-notebook-output.sh`
+- 説明: `docs/harness.md`
+
+## 禁止事項
+
+- 50MB 超のファイル commit (hook で block)
+- random seed 固定なしで実験結果を共有
+- notebook output を残したまま commit (PR で diff が肥大化)
+- データセットを repo に直接 commit (DVC / git-lfs / 外部 storage を使う)
+- `--no-verify` でのコミット

@@ -1,0 +1,76 @@
+# このプロジェクトの Claude Code ハーネス (infra-iac)
+
+**生成元**: harness-forge (archetype: infra-iac)
+
+## 何が scaffold されたか
+
+| ファイル | 役割 |
+|---|---|
+| `CLAUDE.md` | IaC 開発ワークフロー (plan→review→apply 厳守) |
+| `.claude/subagents/infra-reviewer.md` | IaC 専門レビュアー (blast radius / drift 観点) |
+| `.claude/subagents/reviewer.md` | 汎用コードレビュアー (継承) |
+| `.claude/hooks/gate-terraform-apply.sh` | `terraform apply -auto-approve` / `destroy` を block |
+| `.claude/hooks/gate-k8s-apply.sh` | `kubectl apply/delete/replace/scale/rollout/patch` を block |
+| `.claude/hooks/gate-helm-upgrade.sh` | `helm install/upgrade/uninstall/rollback` を block |
+| `.claude/hooks/protect-state-files.sh` | `*.tfstate` / `kubeconfig` 編集を block、`tfvars` に警告 |
+| `.claude/hooks/post-edit-format.sh` | 自動整形 (継承) |
+| `.claude/hooks/pre-commit-lint.sh` | lint ゲート (継承) |
+| `.claude/settings.json` | tflint / kubeval / conftest 等の readonly 系コマンド許可 |
+
+## なぜこの構成か
+
+### IaC 固有のリスク
+
+IaC では「コマンド1つで本番が壊れる」状況が日常的:
+
+1. `terraform apply -auto-approve` で誤った差分を一発適用
+2. `kubectl apply` で context を間違えて prod cluster に dev manifest 適用
+3. `*.tfstate` を git に含めてしまい、secret と state を漏洩
+4. `helm upgrade` でリリース revision を消し rollback 不能に
+
+これらを **機械的に** 防ぐのが本 harness の本質。
+
+### 採用しなかった要素 (意図的)
+
+- **OPA / conftest 自動実行**: policy as code は内容がプロジェクト依存。allowlist だけ与えてユーザーが書く想定
+- **drift detection 自動化**: cron / scheduled agent 連携が必要 (将来 Phase: scheduled remote agent 統合)
+- **multi-environment 切替の強制**: terragrunt / workspace の使い分けはチーム依存
+- **destructive ops の hard block (allowlist 形式)**: dev cluster で local apply したい用途もあるため、警告 + 一時 bypass オプションを残す
+
+## 推奨ワークフロー
+
+```bash
+# 1. 変更を加える (例: instance type を t3.small → t3.medium)
+$EDITOR main.tf
+
+# 2. validation
+terraform fmt
+terraform validate
+tflint
+tfsec   # security scan
+
+# 3. plan を取り、infra-reviewer に相談
+terraform plan -out=tfplan
+# Claude チャットで:
+#   "@infra-reviewer (agent) terraform plan の出力を読んで blast radius を判定して"
+
+# 4. PR 作成、CI で再 plan + 承認
+
+# 5. apply (CI 経由が原則)
+#    local の場合は対話的:
+terraform apply tfplan
+```
+
+## Drift / 監査
+
+`harness-forge` は drift 検出スケジュールを scaffold しません。以下を別途設定:
+
+- GitHub Actions の cron で `terraform plan -detailed-exitcode` (exit 2 が drift)
+- ArgoCD / Flux の sync status を監視
+- AWS Config / Cloud Asset Inventory で resource 棚卸し
+
+## 参考資料
+
+- [Terraform Best Practices](https://www.terraform.io/docs/cloud/guides/recommended-practices/index.html)
+- [Kubernetes Production Best Practices](https://kubernetes.io/docs/concepts/configuration/overview/)
+- Anthropic: [Effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)
