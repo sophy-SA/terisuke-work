@@ -1,0 +1,82 @@
+# このプロジェクトの Claude Code ハーネス (production-saas)
+
+**生成元**: harness-forge (archetype: production-saas)
+
+## 何が scaffold されたか
+
+| ファイル | 役割 |
+|---|---|
+| `CLAUDE.md` | SaaS 開発ワークフロー (Plan→Work→Review + 全層品質ゲート) |
+| `.claude/subagents/code-reviewer.md` | 品質・パフォーマンス・テストカバレッジレビュアー |
+| `.claude/subagents/security-reviewer.md` | OWASP Top 10 観点のセキュリティレビュアー |
+| `.claude/subagents/test-author.md` | TDD でテストを追加する subagent |
+| `.claude/subagents/reviewer.md` | 汎用レビュアー (継承) |
+| `.claude/hooks/pre-pr-gate.sh` | `gh pr create` 前に lint + typecheck + test 通過を必須化 |
+| `.claude/hooks/protect-linter-config.sh` | linter/formatter 設定ファイル編集を block (Sakasegawa 推奨) |
+| `.claude/hooks/post-edit-format.sh` | 自動整形 (継承) |
+| `.claude/hooks/pre-commit-lint.sh` | lint ゲート (継承) |
+| `.claude/settings.json` | npm/pnpm/pytest/gh/supabase/stripe/vercel 等の readonly コマンド許可 |
+| `.github/workflows/ci.yml` | (ci_external=false 時のみ) GitHub Actions CI |
+
+## なぜこの構成か
+
+### 商用 SaaS 固有のリスク
+
+1. **lint ルール緩和の誘惑**: エージェントは「エラーを消す」ためにルール側を変えがち
+   → `protect-linter-config.sh` で構造的に禁止
+2. **失敗 PR の量産**: typecheck/test が落ちたまま PR 作成 → CI red、レビュアー時間消費
+   → `pre-pr-gate.sh` で `gh pr create` をローカルチェック付きにする
+3. **OWASP 系の漏れ**: 認証・決済まわりは特化レビュアーが必要
+   → `security-reviewer` subagent で OWASP Top 10 を体系的に
+4. **テスト後付け**: 機能実装後にテストを書かずに PR
+   → `test-author` subagent + CI で test 必須化
+
+### 採用しなかった要素 (意図的)
+
+- **E2E テスト自動生成**: プロジェクトごとに違いすぎる。test-author が手作業で支援
+- **monitoring / observability scaffolding**: Datadog / Sentry の trace 設定は scope 外 (本人で設定)
+- **DB migration tooling**: archetype 共通化が困難 (Supabase / Prisma / Alembic で差異)。手動運用前提
+
+## 推奨ワークフロー
+
+```bash
+# 1. ブランチ作成
+git checkout -b feat/checkout-flow
+
+# 2. Plan mode で設計 (Esc + p)
+# Claude チャットで:
+#   "Stripe Checkout Session の作成フローを設計して。エラー処理込みで"
+
+# 3. 実装 (incremental)
+# ... Edit/Write ...
+# (post-edit-format hook で auto format)
+
+# 4. テスト追加
+#   "@test-author (agent) この差分にテストを追加"
+
+# 5. レビュー
+#   "@code-reviewer (agent) 差分を見て"
+#   "@security-reviewer (agent) Stripe webhook の署名検証を確認"
+
+# 6. commit + push (pre-commit-lint hook が走る)
+git add . && git commit -m "feat: add Stripe checkout session"
+
+# 7. PR 作成
+gh pr create --title "feat: Stripe checkout" ...
+# pre-pr-gate hook が typecheck + test + lint を確認
+```
+
+## 緊急 bypass
+
+PR が止まると本番に影響する場合:
+
+- `SKIP_PRE_PR_GATE=1 gh pr create ...` で pre-pr-gate を一時 bypass (CI で red 覚悟)
+- `SKIP_LINTER_CONFIG_PROTECTION=1` で linter config 編集を一時許可
+
+bypass を使った PR は description に理由を必ず書くこと。
+
+## 参考資料
+
+- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
+- Sakasegawa: [Harness Engineering 2026](https://nyosegawa.com/en/posts/harness-engineering-best-practices-2026/) (linter config 保護の出典)
+- Anthropic: [Effective harnesses for long-running agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)

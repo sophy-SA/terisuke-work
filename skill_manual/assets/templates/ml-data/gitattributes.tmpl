@@ -1,0 +1,13 @@
+# Jupyter Notebook の diff を見やすくする
+# nbstripout を導入していなくても output 部分の差分を抑制する filter (Git 2.18+)
+*.ipynb diff=jupyter
+
+# Python ソース
+*.py text eol=lf
+
+# Data files (LFS / DVC で管理する想定、参考):
+# *.parquet filter=lfs diff=lfs merge=lfs -text
+# *.h5      filter=lfs diff=lfs merge=lfs -text
+# *.pkl     filter=lfs diff=lfs merge=lfs -text
+# *.pt      filter=lfs diff=lfs merge=lfs -text
+# *.safetensors filter=lfs diff=lfs merge=lfs -text

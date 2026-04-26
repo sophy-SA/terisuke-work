@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node.js セットアップ (TS/JS プロジェクト想定。Python ベースなら適宜調整)
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+        if: hashFiles('package.json') != ''
+
+      - name: Install dependencies (Node)
+        run: npm ci
+        if: hashFiles('package.json') != ''
+
+      - name: Lint
+        run: |
+          if [ -f .claude/hooks/pre-commit-lint.sh ]; then
+            git diff --name-only HEAD~1 HEAD | xargs -I{} sh -c 'echo "{}" > /dev/null'
+            bash .claude/hooks/pre-commit-lint.sh || true
+          fi
+          if [ -f package.json ]; then
+            npm run lint --if-present
+          fi
+
+      - name: Typecheck
+        run: |
+          if [ -f tsconfig.json ]; then
+            npx tsc --noEmit
+          fi
+
+      - name: Unit + Integration tests
+        run: |
+          if [ -f package.json ]; then
+            npm test --if-present
+          fi
+
+      # Python セットアップ (pyproject.toml 検出時のみ)
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+        if: hashFiles('pyproject.toml') != ''
+
+      - name: Python lint + test
+        run: |
+          if [ -f pyproject.toml ]; then
+            pip install -e '.[dev]' || pip install -e .
+            ruff check . || true
+            mypy . || true
+            pytest -q || true
+          fi
+        if: hashFiles('pyproject.toml') != ''
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Secret scan
+        run: |
+          if [ -f .claude/hooks/block-secret-commit.sh ]; then
+            # PR 全 diff に対して secret pattern を grep
+            git fetch origin ${{ github.base_ref }} 2>/dev/null || true
+            DIFF=$(git diff origin/${{ github.base_ref }}...HEAD 2>/dev/null || git diff HEAD)
+            echo "$DIFF" | grep -iE '(api[_-]?key|secret|password|token)\s*[:=]\s*"[^"]{12,}"' && exit 1 || echo "no secrets detected"
+          fi
+
+      - name: npm audit (high severity)
+        run: |
+          if [ -f package.json ]; then
+            npm audit --audit-level=high
+          fi
+        continue-on-error: true

@@ -1,25 +1,78 @@
 # library-package archetype: npm / PyPI / crates / go module として公開する再利用コード
 #
-# MVP スコープ: stub のみ。Phase 8c で template を実装。
-# 設計方針 (将来):
-#   - daily-utility extends (最小 hooks を継承)
-#   - semver + CHANGELOG 自動検証 hook
-#   - 公開 API の後方互換性チェック (api-compat reviewer)
-#   - typecheck + unit-test 必須 (precommit_strictness=lint-test 以上を強制推奨)
-#   - release workflow (GitHub Actions) で publish gate
-#   - docs 生成 (typedoc / mkdocs 等) チェック
+# 設計方針:
+#   - daily-utility extends (基本 hook を継承)
+#   - api-compat-reviewer subagent (公開 API 後方互換 / semver 観点)
+#   - CHANGELOG 必須 (src/ 編集 commit では CHANGELOG.md 更新を要求)
+#   - 公開 API ファイル (index.ts / __init__.py / lib.rs) の編集に警告
+#   - git tag v* に対して CHANGELOG エントリ必須 gate
+#   - api-compat / semver-check が required_checks にあれば対応 hook 追加
 
 name: library-package
-status: planned
+status: complete
 description: |
   npm / PyPI / crates / go module として公開するライブラリやパッケージ向け。
-  semver / CHANGELOG / 公開 API 後方互換 / docs 生成 / release automation を scaffold する。
-  MVP では未実装。Phase 8c で実装予定。
+  semver 規律、CHANGELOG 必須、公開 API 後方互換チェック、release tag gate を scaffold する。
 
 extends: daily-utility
 
-templates: []
-conditional_templates: []
-variables: {}
-subagents: []
-hooks: {}
+templates:
+  # library-package 版 CLAUDE.md (daily-utility 版を上書き)
+  - src: library-package/CLAUDE.md.tmpl
+    dest: CLAUDE.md
+    merge: skip_if_exists
+
+  # 公開 API 後方互換レビュアー
+  - src: library-package/subagents/api-compat-reviewer.md.tmpl
+    dest: .claude/subagents/api-compat-reviewer.md
+    merge: overwrite
+
+  # PreToolUse: 公開 API ファイル編集に警告
+  - src: library-package/hooks/protect-public-api.sh.tmpl
+    dest: .claude/hooks/protect-public-api.sh
+    mode: "0755"
+    merge: overwrite
+
+  # PreToolUse: git tag v* に対して CHANGELOG エントリ必須
+  - src: library-package/hooks/gate-version-tag.sh.tmpl
+    dest: .claude/hooks/gate-version-tag.sh
+    mode: "0755"
+    merge: overwrite
+
+  # pre-commit: src/ 編集時に CHANGELOG.md 更新を要求
+  - src: library-package/hooks/check-changelog.sh.tmpl
+    dest: .claude/hooks/check-changelog.sh
+    mode: "0755"
+    merge: overwrite
+
+  # library-package 用 settings.json (daily-utility にマージ)
+  - src: library-package/settings.patch.json.tmpl
+    dest: .claude/settings.json
+    merge: json-deep
+
+  - src: library-package/docs/harness.md.tmpl
+    dest: docs/harness.md
+    merge: skip_if_exists
+
+  # CHANGELOG.md の雛形 (既存があれば skip)
+  - src: library-package/CHANGELOG.md.tmpl
+    dest: CHANGELOG.md
+    merge: skip_if_exists
+
+conditional_templates:
+  # CI YAML (ci_external=false かつ TypeScript/JS 系の場合)
+  # MVP では一般 release-workflow を 1 個だけ提供 (詳細は後の archetype で)
+  []
+
+subagents:
+  - reviewer            # daily-utility 継承
+  - api-compat-reviewer
+
+hooks:
+  PreToolUse:
+    - matcher: "Edit|Write"
+      script: ".claude/hooks/protect-public-api.sh"
+    - matcher: "Bash"
+      script: ".claude/hooks/gate-version-tag.sh"
+    - matcher: "Bash"
+      script: ".claude/hooks/check-changelog.sh"

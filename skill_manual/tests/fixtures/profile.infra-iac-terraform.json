@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-04-25T12:00:00Z",
+  "project": {
+    "name": "sandbox-tf-infra",
+    "summary": "E2E テスト用 Terraform IaC fixture。AWS 上のステージング環境を想定",
+    "languages": ["other"],
+    "root_kind": ["infra"],
+    "design_focus": false
+  },
+  "archetype_primary": "infra-iac",
+  "archetype_scores": {
+    "daily-utility": 0.05,
+    "library-package": 0.00,
+    "production-saas": 0.05,
+    "mobile-app": 0.00,
+    "ml-data": 0.00,
+    "infra-iac": 0.90
+  },
+  "workflow": {
+    "plan_work_review": true,
+    "precommit_strictness": "lint-only",
+    "long_running_agents": false
+  },
+  "quality_gates": {
+    "required_checks": ["lint", "format", "infra-plan-review"],
+    "ci_external": true
+  },
+  "review": {
+    "ai_second_opinion": true,
+    "specialized_reviewers": ["code", "security", "infra"]
+  },
+  "safety": {
+    "handles_secrets": true,
+    "destructive_ops": ["terraform-apply", "k8s-apply", "deploy"]
+  },
+  "meta": {
+    "locale": "ja",
+    "existing_claude_dir": false,
+    "intents": [
+      "terraform apply は CI 経由のみ、local の auto-approve は禁止",
+      "tfstate と tfvars を絶対に commit しない",
+      "本番への変更前に必ず staging で plan→review→apply を経由する"
+    ]
+  },
+  "overrides": {
+    "exclude_subagents": [],
+    "force_include_hooks": []
+  }
+}

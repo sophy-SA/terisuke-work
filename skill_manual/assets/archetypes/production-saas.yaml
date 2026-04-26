@@ -1,25 +1,75 @@
-# production-saas archetype: Next.js/Supabase 等の商用 SaaS 向け
+# production-saas archetype: Next.js / Supabase / Stripe 等の商用 SaaS
 #
-# MVP スコープ: stub のみ。Phase 8 で実装。
-# 設計方針 (将来):
-#   - daily-utility extends (共通基盤)
-#   - Plan → Work → Review ワークフロー
-#   - 全層品質ゲート (PostToolUse → pre-commit → CI → review)
-#   - 3 subagents: code-reviewer / security-reviewer / test-author
-#   - GitHub Actions CI YAML 自動生成
-#   - 秘密情報ブロック / linter 設定ファイル保護 / PR gate hook
+# 設計方針:
+#   - daily-utility extends (基本 hook 継承)
+#   - 3 subagents: code-reviewer / security-reviewer / test-author (task-type)
+#   - PR 作成前 gate (typecheck + test + security-scan)
+#   - linter 設定ファイル保護 (eslintrc / biome.json / pyproject.toml 等)
+#   - 秘密情報ブロック (handles_secrets=true 想定なら親で配置済み、念押しで条件付き)
+#   - GitHub Actions CI YAML 生成 (ci_external=false 時のみ)
 
 name: production-saas
-status: planned
+status: complete
 description: |
   Next.js / Supabase / Stripe 等、認証・決済・CI/CD を伴う商用 SaaS 向け。
-  Plan → Work → Review ワークフローと全層品質ゲートを scaffold する。
-  MVP では未実装。Phase 8 で daily-utility の上に差分として実装予定。
+  Plan → Work → Review ワークフローと全層品質ゲート (PostToolUse → pre-commit
+  → CI → review) を scaffold する。
 
 extends: daily-utility
 
-templates: []
-conditional_templates: []
-variables: {}
-subagents: []
-hooks: {}
+templates:
+  - src: production-saas/CLAUDE.md.tmpl
+    dest: CLAUDE.md
+    merge: skip_if_exists
+
+  - src: production-saas/subagents/code-reviewer.md.tmpl
+    dest: .claude/subagents/code-reviewer.md
+    merge: overwrite
+
+  - src: production-saas/subagents/security-reviewer.md.tmpl
+    dest: .claude/subagents/security-reviewer.md
+    merge: overwrite
+
+  - src: production-saas/subagents/test-author.md.tmpl
+    dest: .claude/subagents/test-author.md
+    merge: overwrite
+
+  # PR 作成前 gate (gh pr create を検知して pre-PR チェック必須化)
+  - src: production-saas/hooks/pre-pr-gate.sh.tmpl
+    dest: .claude/hooks/pre-pr-gate.sh
+    mode: "0755"
+    merge: overwrite
+
+  # linter 設定ファイルの編集をブロック (Sakasegawa の "Linter config 保護")
+  - src: production-saas/hooks/protect-linter-config.sh.tmpl
+    dest: .claude/hooks/protect-linter-config.sh
+    mode: "0755"
+    merge: overwrite
+
+  - src: production-saas/settings.patch.json.tmpl
+    dest: .claude/settings.json
+    merge: json-deep
+
+  - src: production-saas/docs/harness.md.tmpl
+    dest: docs/harness.md
+    merge: skip_if_exists
+
+conditional_templates:
+  # ci_external=false の場合のみ GitHub Actions YAML を生成
+  - condition: "CI_EXTERNAL_FALSE"
+    src: production-saas/validation/ci.yml.tmpl
+    dest: .github/workflows/ci.yml
+    merge: skip_if_exists
+
+subagents:
+  - reviewer            # daily-utility 継承 (汎用)
+  - code-reviewer       # 厳密版
+  - security-reviewer
+  - test-author
+
+hooks:
+  PreToolUse:
+    - matcher: "Edit|Write"
+      script: ".claude/hooks/protect-linter-config.sh"
+    - matcher: "Bash"
+      script: ".claude/hooks/pre-pr-gate.sh"

@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# check-notebook-output.sh
+# =========================================================================
+# PreToolUse hook (matcher: Edit|Write): .ipynb 編集時に output 残存を警告
+#
+# 動作:
+#   - ipynb 以外は通過
+#   - content (Write の場合) に "outputs": [...]  非空配列があれば警告
+#   - block しない (commit 直前に nbstripout 推奨を促す)
+# =========================================================================
+
+set -euo pipefail
+
+INPUT_JSON=$(cat)
+
+FILE_PATH=$(echo "$INPUT_JSON" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    print(d.get('tool_input', {}).get('file_path', ''))
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+
+if [[ -z "$FILE_PATH" ]]; then
+  exit 0
+fi
+
+# .ipynb 以外は通過
+case "$FILE_PATH" in
+  *.ipynb) ;;
+  *) exit 0 ;;
+esac
+
+# content から outputs を確認
+HAS_OUTPUTS=$(echo "$INPUT_JSON" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    content = d.get('tool_input', {}).get('content', '')
+    if not content:
+        print('no')
+        exit(0)
+    nb = json.loads(content)
+    cells = nb.get('cells', [])
+    for c in cells:
+        if c.get('outputs'):
+            print('yes')
+            exit(0)
+    print('no')
+except Exception:
+    print('unknown')
+" 2>/dev/null || echo "unknown")
+
+if [[ "$HAS_OUTPUTS" == "yes" ]]; then
+  cat >&2 <<EOF
+⚠ NOTICE: notebook に output セルが残っています ($FILE_PATH)
+  commit 前に以下を推奨:
+    pip install nbstripout
+    nbstripout $FILE_PATH
+
+  または:
+    jupyter nbconvert --clear-output --inplace $FILE_PATH
+
+  output が残ると PR diff が肥大化し、binary 化された image データが履歴を太らせます。
+EOF
+fi
+
+exit 0

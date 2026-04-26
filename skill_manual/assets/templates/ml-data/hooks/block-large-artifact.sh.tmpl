@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# block-large-artifact.sh
+# =========================================================================
+# PreToolUse hook (matcher: Write): 大容量ファイル書き込みをブロックする
+#
+# 閾値:
+#   - デフォルト 50MB (BLOCK_LARGE_ARTIFACT_MB で上書き可能)
+#   - DVC / git-lfs / S3 / GCS への移動を案内
+#
+# 対象拡張子 (model / dataset / artifact):
+#   *.bin, *.safetensors, *.pt, *.pth, *.ckpt, *.h5, *.pb, *.onnx, *.tflite,
+#   *.parquet, *.feather, *.arrow, *.npz, *.pkl, *.joblib,
+#   *.csv (大容量のみ), *.tsv, *.jsonl
+# =========================================================================
+
+set -euo pipefail
+
+INPUT_JSON=$(cat)
+
+FILE_PATH=$(echo "$INPUT_JSON" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    print(d.get('tool_input', {}).get('file_path', ''))
+except Exception:
+    print('')
+" 2>/dev/null || echo "")
+
+CONTENT_BYTES=$(echo "$INPUT_JSON" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    c = d.get('tool_input', {}).get('content', '')
+    print(len(c.encode('utf-8')) if isinstance(c, str) else 0)
+except Exception:
+    print(0)
+" 2>/dev/null || echo "0")
+
+if [[ -z "$FILE_PATH" ]]; then
+  exit 0
+fi
+
+THRESHOLD_MB="${BLOCK_LARGE_ARTIFACT_MB:-50}"
+THRESHOLD_BYTES=$((THRESHOLD_MB * 1024 * 1024))
+
+# 拡張子チェック (model / dataset 系)
+LOWER=$(echo "$FILE_PATH" | tr '[:upper:]' '[:lower:]')
+IS_ARTIFACT=""
+case "$LOWER" in
+  *.bin|*.safetensors|*.pt|*.pth|*.ckpt|*.h5|*.pb|*.onnx|*.tflite)
+    IS_ARTIFACT="model" ;;
+  *.parquet|*.feather|*.arrow|*.npz|*.pkl|*.joblib)
+    IS_ARTIFACT="dataset/binary" ;;
+  *.csv|*.tsv|*.jsonl|*.json)
+    IS_ARTIFACT="dataset/text" ;;
+esac
+
+# サイズ検査
+if [[ "$CONTENT_BYTES" -gt "$THRESHOLD_BYTES" ]]; then
+  cat >&2 <<EOF
+ERROR: 大容量ファイル書き込みを検知 ($FILE_PATH, ${CONTENT_BYTES} bytes > ${THRESHOLD_MB}MB)
+WHY:   git は >50MB ファイルを苦手とし、push/clone 速度が劣化する。複数バージョンが残ると repo が肥大
+FIX:
+  1. **DVC** で管理: 'dvc add $FILE_PATH' → '.dvc' meta だけ commit
+  2. **git-lfs** で管理: 'git lfs track "$LOWER"' → 通常 commit
+  3. **外部 storage** (S3 / GCS / Azure Blob): URI を repo に書き、ファイル本体はクラウド
+  4. **HuggingFace Hub** (model/dataset): 'huggingface-cli upload'
+  5. 一時 bypass: BLOCK_LARGE_ARTIFACT_MB=200 を export して再実行 (推奨しない)
+
+ファイル種別: $IS_ARTIFACT
+EOF
+  exit 2
+fi
+
+# 拡張子は artifact だが小さい場合: 警告のみ
+if [[ -n "$IS_ARTIFACT" ]] && [[ "$CONTENT_BYTES" -gt $((10 * 1024 * 1024)) ]]; then
+  cat >&2 <<EOF
+⚠ NOTICE: $IS_ARTIFACT ファイル ($FILE_PATH, ${CONTENT_BYTES} bytes) を書き込みます
+  サイズが大きくなる予兆あり。閾値 (${THRESHOLD_MB}MB) を超えたら自動 block されます。
+  事前に DVC / git-lfs での管理を検討してください。
+EOF
+fi
+
+exit 0

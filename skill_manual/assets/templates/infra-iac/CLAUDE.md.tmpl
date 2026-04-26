@@ -1,0 +1,51 @@
+# {{PROJECT_NAME}}
+
+{{PROJECT_SUMMARY}}
+
+## IaC 開発ワークフロー
+
+破壊的操作の blast radius が段違いに大きいため、**plan → review → apply** を厳守。
+
+### 起動時ルーチン
+
+1. `pwd` と `git log --oneline -10` で現状把握
+2. 既存の変更が apply されたか確認 (drift の有無)
+3. 新変更前に必ず `terraform plan` / `kubectl diff` / `helm diff` で差分確認
+
+### 作業ルール
+
+- 変更は1リソース・1ファイル単位 (incremental)
+- **plan の出力を PR description に貼る** (レビュアーが diff を見える)
+- prod 環境への変更前に staging で検証
+- apply 系コマンドは hook で gate されているため、**`-auto-approve` 系の bypass は禁止**
+- state ファイル (*.tfstate, kubeconfig) は絶対 commit しない (hook で block)
+
+### コマンドの目安
+
+- **Terraform**: `terraform fmt` / `terraform validate` / `terraform plan` / `terraform apply` (gate あり)
+- **Kubernetes**: `kubectl diff` / `kubectl apply` (gate あり) / `kubectl get`
+- **Helm**: `helm template` / `helm diff` / `helm upgrade` (gate あり)
+- **Policy**: `conftest` / `tflint` / `tfsec`
+
+## プロジェクト固有
+
+- **意図1**: {{INTENT_1}}
+- **意図2**: {{INTENT_2}}
+- **意図3**: {{INTENT_3}}
+
+## 参照
+
+- IaC レビュアー: `.claude/subagents/infra-reviewer.md`
+- terraform apply gate: `.claude/hooks/gate-terraform-apply.sh`
+- kubectl apply gate: `.claude/hooks/gate-k8s-apply.sh`
+- helm upgrade gate: `.claude/hooks/gate-helm-upgrade.sh`
+- state file 保護: `.claude/hooks/protect-state-files.sh`
+- 説明: `docs/harness.md`
+
+## 禁止事項
+
+- `terraform apply -auto-approve` / `terraform destroy` の local 実行
+- `kubectl apply` を CI/staging を経ずに本番 context に直接実行
+- `helm upgrade` を本番 release に対して local から実行
+- `*.tfstate` / kubeconfig / 秘密情報の commit
+- `--no-verify` でのコミット

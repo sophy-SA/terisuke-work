@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-04-25T12:00:00Z",
+  "project": {
+    "name": "sandbox-npm-lib",
+    "summary": "E2E テスト用 npm パッケージ fixture。汎用ユーティリティ関数を export する想定",
+    "languages": ["typescript"],
+    "root_kind": ["library"],
+    "design_focus": false
+  },
+  "archetype_primary": "library-package",
+  "archetype_scores": {
+    "daily-utility": 0.05,
+    "library-package": 0.80,
+    "production-saas": 0.05,
+    "mobile-app": 0.00,
+    "ml-data": 0.00,
+    "infra-iac": 0.10
+  },
+  "workflow": {
+    "plan_work_review": true,
+    "precommit_strictness": "lint-test",
+    "long_running_agents": false
+  },
+  "quality_gates": {
+    "required_checks": ["lint", "format", "typecheck", "unit-test", "api-compat", "semver-check"],
+    "ci_external": true
+  },
+  "review": {
+    "ai_second_opinion": true,
+    "specialized_reviewers": ["code", "api-compat"]
+  },
+  "safety": {
+    "handles_secrets": false,
+    "destructive_ops": []
+  },
+  "meta": {
+    "locale": "ja",
+    "existing_claude_dir": false,
+    "intents": [
+      "公開 API を変更したら必ず CHANGELOG を更新",
+      "breaking change は MAJOR bump を遵守",
+      "全リリースに git tag と CHANGELOG エントリを対応させる"
+    ]
+  },
+  "overrides": {
+    "exclude_subagents": [],
+    "force_include_hooks": []
+  }
+}

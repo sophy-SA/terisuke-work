@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(npm publish:*)",
+      "Bash(npm pack:*)",
+      "Bash(npm version:*)",
+      "Bash(npm run build:*)",
+      "Bash(yarn build:*)",
+      "Bash(yarn pack:*)",
+      "Bash(pnpm publish:*)",
+      "Bash(pnpm pack:*)",
+      "Bash(python -m build:*)",
+      "Bash(python -m twine:*)",
+      "Bash(twine check:*)",
+      "Bash(uv build:*)",
+      "Bash(hatch build:*)",
+      "Bash(poetry build:*)",
+      "Bash(poetry publish:*)",
+      "Bash(cargo publish:*)",
+      "Bash(cargo package:*)",
+      "Bash(cargo doc:*)",
+      "Bash(go build ./...)",
+      "Bash(go test ./...:*)",
+      "Bash(go doc:*)",
+      "Bash(typedoc:*)",
+      "Bash(pdoc:*)",
+      "Bash(sphinx-build:*)",
+      "Bash(api-extractor:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/protect-public-api.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/check-changelog.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/gate-version-tag.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

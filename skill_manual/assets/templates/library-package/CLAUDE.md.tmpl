@@ -1,0 +1,52 @@
+# {{PROJECT_NAME}}
+
+{{PROJECT_SUMMARY}}
+
+## ライブラリ開発ワークフロー
+
+公開パッケージとして配布されるため、**API 後方互換** と **release 規律** が最優先です。
+
+### 起動時ルーチン
+
+1. `pwd` と `git log --oneline -10` で現状把握
+2. 既存の失敗テストを先に修正
+3. 公開 API (`index.ts` / `__init__.py` / `lib.rs` 等) を編集する場合は事前に api-compat-reviewer に相談
+
+### 作業ルール
+
+- 一度に1機能に集中
+- **公開 API を変更したら必ず CHANGELOG.md を同時更新**
+- breaking change は MAJOR バージョン bump (semver 厳守)
+- feature 追加は MINOR、bugfix は PATCH
+- 変更後は `api-compat-reviewer` subagent → commit
+- リリース前に `git tag v<version>` (CHANGELOG エントリ必須 gate あり)
+
+### バージョン管理
+
+- **言語**: {{LANGUAGES_CSV}}
+- 主要言語ごとの version 管理:
+  - Python: `pyproject.toml` の `version` または `__init__.py` の `__version__`
+  - TypeScript/JS: `package.json` の `version`
+  - Rust: `Cargo.toml` の `version`
+  - Go: `go.mod` のモジュールパス + git tag
+
+## プロジェクト固有
+
+- **意図1**: {{INTENT_1}}
+- **意図2**: {{INTENT_2}}
+- **意図3**: {{INTENT_3}}
+
+## 参照
+
+- 後方互換レビュー: `.claude/subagents/api-compat-reviewer.md`
+- 公開 API 編集警告: `.claude/hooks/protect-public-api.sh`
+- CHANGELOG 必須: `.claude/hooks/check-changelog.sh`
+- release tag gate: `.claude/hooks/gate-version-tag.sh`
+- 説明: `docs/harness.md`
+
+## 禁止事項
+
+- CHANGELOG 更新なしで公開 API を変更
+- semver 規律を破る (breaking なのに MINOR bump 等)
+- `git tag v*` 前に CHANGELOG エントリを書かない
+- `--no-verify` でのコミット

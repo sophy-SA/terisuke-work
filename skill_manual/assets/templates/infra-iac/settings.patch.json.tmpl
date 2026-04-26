@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(terraform fmt:*)",
+      "Bash(terraform validate:*)",
+      "Bash(terraform plan:*)",
+      "Bash(terraform init:*)",
+      "Bash(terraform output:*)",
+      "Bash(terraform show:*)",
+      "Bash(terraform workspace:*)",
+      "Bash(terraform state list:*)",
+      "Bash(tflint:*)",
+      "Bash(tfsec:*)",
+      "Bash(terragrunt plan:*)",
+      "Bash(terragrunt validate:*)",
+      "Bash(kubectl get:*)",
+      "Bash(kubectl describe:*)",
+      "Bash(kubectl logs:*)",
+      "Bash(kubectl diff:*)",
+      "Bash(kubectl explain:*)",
+      "Bash(kubectl config:*)",
+      "Bash(kubeval:*)",
+      "Bash(kubeconform:*)",
+      "Bash(kustomize build:*)",
+      "Bash(helm template:*)",
+      "Bash(helm lint:*)",
+      "Bash(helm diff:*)",
+      "Bash(helm dependency:*)",
+      "Bash(ansible-lint:*)",
+      "Bash(ansible-playbook --check:*)",
+      "Bash(ansible-playbook --syntax-check:*)",
+      "Bash(conftest:*)",
+      "Bash(opa:*)",
+      "Bash(checkov:*)",
+      "Bash(yamllint:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/gate-terraform-apply.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/gate-k8s-apply.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/gate-helm-upgrade.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/protect-state-files.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
