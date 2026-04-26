@@ -105,8 +105,18 @@ harness-forge/
 │   └── knowledge/       # Anthropic 公式 + コミュニティパターンの distilled 台帳
 ├── tests/               # unit / integration / E2E テスト
 └── docs/
-    └── architecture.md  # 3-skill データフロー + archetype 設計
+    ├── tutorial.md      # 初めての人向け 10-15 分チュートリアル
+    ├── user-guide.md    # 詳細マニュアル (設定 / 衝突解決 / 落とし穴)
+    ├── use-cases.md     # 6 archetype 別シナリオ + チャット応答事例
+    └── architecture.md  # 4-skill データフロー + archetype 設計
 ```
+
+## ドキュメント
+
+- **[tutorial.md](docs/tutorial.md)** — 初めての人向け 10-15 分のステップバイステップガイド
+- **[user-guide.md](docs/user-guide.md)** — インストールモード / profile.json 編集 / 衝突解決 / バックアップ戦略 / よくある落とし穴
+- **[use-cases.md](docs/use-cases.md)** — 6 archetype それぞれの典型シナリオとチャット応答事例
+- **[architecture.md](docs/architecture.md)** — 4-skill のデータフロー / Archetype 設計思想
 
 ## ステータス
 
